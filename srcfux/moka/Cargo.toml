@@ -1,0 +1,14 @@
+[package]
+name = "moka"
+version = "0.1.0"
+edition = "2021"
+description = "Portage-like source-based package manager for FunTux Linux"
+license = "MIT"
+
+[[bin]]
+name = "moka"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
+lto = true

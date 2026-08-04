@@ -1,0 +1,7 @@
+NAME="Funtux"
+PRETTY_NAME="FunTux Linux"
+ID=fux
+BUILD_ID=rolling
+HOME_URL="https://github.com/thepanoc95/funtux"
+DOCUMENTATION_URL="https://github.com/thepanoc95/funtux/wiki"
+BUG_REPORT_URL="https://github.com/thepanoc95/funxtux/issues"

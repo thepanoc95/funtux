@@ -1,0 +1,4 @@
+DISTRIB_ID=FunTux
+DISTRIB_RELEASE=rolling
+DISTRIB_CODENAME=funtux
+DISTRIB_DESCRIPTION="FunTux Linux (source-based)"
