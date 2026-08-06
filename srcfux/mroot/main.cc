@@ -24,6 +24,7 @@
     #include <sys/mount.h>
     #include <sys/syscall.h>
     #include <sched.h>
+    #include "funroot.h"
 #endif
 
 namespace mroot {
@@ -197,6 +198,44 @@ bool run_command(const std::vector<std::string> &args) {
     if (!WIFEXITED(st) || WEXITSTATUS(st) != 0) return false;
     return true;
 }
+
+#if defined(__linux__) || defined(__LINUX__)
+void make_session() {
+    if (getsid(0) == getpid()) return;
+    if (setsid() < 0) {
+        if (errno == EPERM) {
+            pid_t pid = fork();
+            if (pid > 0) _exit(0);
+            if (pid < 0) return;
+            if (setsid() < 0) return;
+        } else {
+            return;
+        }
+    }
+    if (isatty(0)) ioctl(0, TIOCSCTTY, 0);
+}
+
+int exec_prepared(const std::string &cmd, const std::vector<std::string> &args,
+                  bool new_session) {
+    char term[64] = {0};
+    if (const char *t = getenv("TERM")) strncpy(term, t, sizeof(term) - 1);
+    clearenv();
+    setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
+    setenv("HOME", "/root", 1);
+    setenv("TERM", term[0] ? term : "linux", 1);
+    setenv("SHELL", cmd.c_str(), 1);
+    setenv("USER", "root", 1);
+    setenv("LOGNAME", "root", 1);
+    if (new_session) make_session();
+    std::vector<char *> argv;
+    argv.push_back(const_cast<char *>(cmd.c_str()));
+    for (const std::string &a : args) argv.push_back(const_cast<char *>(a.c_str()));
+    argv.push_back(nullptr);
+    execvp(argv[0], argv.data());
+    std::cerr << "mroot: exec " << cmd << ": " << strerror(errno) << "\n";
+    return 127;
+}
+#endif // __linux__
 
 std::string fs_type_of(const std::string &dev) {
     std::string out = capture_command("blkid -s TYPE -o value " + dev + " 2>/dev/null");
@@ -410,7 +449,8 @@ bool copy_file(const std::string &src, const std::string &dst, const struct stat
     }
     if (ok) {
         fchmod(out, st.st_mode & 07777);
-        fchown(out, st.st_uid, st.st_gid);
+        int rc = fchown(out, st.st_uid, st.st_gid);
+        (void)rc;
         struct timespec ts[2] = { st.st_atim, st.st_mtim };
         futimens(out, ts);
     }
@@ -467,7 +507,8 @@ bool copy_tree(const std::string &src, const std::string &dst,
                 ok = false;
                 break;
             }
-            lchown(t.c_str(), st.st_uid, st.st_gid);
+            int rc = lchown(t.c_str(), st.st_uid, st.st_gid);
+            (void)rc;
         } else if (S_ISDIR(st.st_mode)) {
             if (!copy_tree(s, t, links, false)) {
                 ok = false;
@@ -499,7 +540,7 @@ bool copy_tree(const std::string &src, const std::string &dst,
                 break;
             }
             chmod(t.c_str(), st.st_mode & 07777);
-            chown(t.c_str(), st.st_uid, st.st_gid);
+            (void)chown(t.c_str(), st.st_uid, st.st_gid);
         }
     }
     closedir(d);
@@ -648,41 +689,10 @@ public:
             std::cerr << "mroot: chdir(/): " << strerror(errno) << "\n";
             return 1;
         }
-        char term[64] = {0};
-        if (const char *t = getenv("TERM")) strncpy(term, t, sizeof(term) - 1);
-        clearenv();
-        setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
-        setenv("HOME", "/root", 1);
-        setenv("TERM", term[0] ? term : "linux", 1);
-        setenv("SHELL", cmd.c_str(), 1);
-        setenv("USER", "root", 1);
-        setenv("LOGNAME", "root", 1);
-        if (new_session) create_session();
-        std::vector<char *> argv;
-        argv.push_back(const_cast<char *>(cmd.c_str()));
-        for (const std::string &a : args) argv.push_back(const_cast<char *>(a.c_str()));
-        argv.push_back(nullptr);
-        execvp(argv[0], argv.data());
-        std::cerr << "mroot: exec " << cmd << ": " << strerror(errno) << "\n";
-        return 127;
+        return exec_prepared(cmd, args, new_session);
     }
 
 private:
-    void create_session() const {
-        if (getsid(0) == getpid()) return;
-        if (setsid() < 0) {
-            if (errno == EPERM) {
-                pid_t pid = fork();
-                if (pid > 0) _exit(0);
-                if (pid < 0) return;
-                if (setsid() < 0) return;
-            } else {
-                return;
-            }
-        }
-        if (isatty(0)) ioctl(0, TIOCSCTTY, 0);
-    }
-
     bool mount_dns(const std::string &rp) const {
         std::string host_conf = "/etc/resolv.conf";
         std::string target = join_root(rp, "/etc/resolv.conf");
@@ -710,6 +720,161 @@ std::string work_path(MultiRoot &r) {
     if (!attach_media(r.media())) return "";
     return r.media().mountpoint + "/" + r.media().relpath;
 }
+
+#if defined(__linux__) || defined(__LINUX__)
+namespace funroot_k {
+
+constexpr const char *DEV = "/dev/funroot";
+
+int open_dev() {
+    return ::open(DEV, O_RDWR | O_CLOEXEC);
+}
+
+bool available() {
+    int fd = open_dev();
+    if (fd < 0) return false;
+    close(fd);
+    return true;
+}
+
+int add(unsigned index, const std::string &path) {
+    int fd = open_dev();
+    if (fd < 0) return -1;
+    struct funroot_req req{};
+    req.index = index;
+    strncpy(req.path, path.c_str(), sizeof(req.path) - 1);
+    int rc = ioctl(fd, FUNROOT_ADD, &req);
+    if (rc != 0 && errno == EBUSY) rc = 0;
+    close(fd);
+    return rc;
+}
+
+int del(unsigned index) {
+    int fd = open_dev();
+    if (fd < 0) return -1;
+    struct funroot_req req{};
+    req.index = index;
+    int rc = ioctl(fd, FUNROOT_DEL, &req);
+    close(fd);
+    return rc;
+}
+
+int set(unsigned index) {
+    int fd = open_dev();
+    if (fd < 0) return -1;
+    struct funroot_req req{};
+    req.index = index;
+    int rc = ioctl(fd, FUNROOT_SET, &req);
+    close(fd);
+    return rc;
+}
+
+int get(unsigned &index, std::string &path) {
+    int fd = open_dev();
+    if (fd < 0) return -1;
+    struct funroot_req req{};
+    int rc = ioctl(fd, FUNROOT_GET, &req);
+    close(fd);
+    if (rc == 0) {
+        index = req.index;
+        path = req.path;
+    }
+    return rc;
+}
+
+bool list(std::ostream &os) {
+    int fd = open_dev();
+    if (fd < 0) return false;
+    os << "index\tpath\n";
+    for (unsigned i = 0; i < FUNROOT_MAX_ROOTS; ++i) {
+        struct funroot_req req{};
+        req.index = i;
+        if (ioctl(fd, FUNROOT_PATH, &req) == 0)
+            os << i << "\t" << req.path << "\n";
+    }
+    close(fd);
+    return true;
+}
+
+} // namespace funroot_k
+
+bool kernel_enter(unsigned index, const std::string &cmd,
+                  const std::vector<std::string> &args,
+                  bool new_session, bool dns) {
+    if (!require_root()) return false;
+    if (!funroot_k::available()) {
+        std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
+        return false;
+    }
+    MultiRoot r(index);
+    std::string rp;
+    if (r.is_host()) {
+        rp = "/";
+    } else {
+        if (!r.init()) return false;
+        if (!r.mount_all(dns)) return false;
+        rp = r.status_path();
+    }
+    if (funroot_k::add(index, rp) != 0) {
+        std::cerr << "mroot: cannot register root " << index << " with funroot\n";
+        return false;
+    }
+    if (funroot_k::set(index) != 0) {
+        std::cerr << "mroot: funroot switch to root " << index << " failed\n";
+        return false;
+    }
+    if (chdir("/") != 0) {
+        std::cerr << "mroot: chdir(/): " << strerror(errno) << "\n";
+        return false;
+    }
+    return exec_prepared(cmd, args, new_session) == 0;
+}
+
+bool kernel_switch(unsigned index) {
+    if (!require_root()) return false;
+    if (!funroot_k::available()) {
+        std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
+        return false;
+    }
+    MultiRoot r(index);
+    std::string rp = r.is_host() ? "/" : r.status_path();
+    if (funroot_k::add(index, rp) != 0) {
+        std::cerr << "mroot: cannot register root " << index << " with funroot\n";
+        return false;
+    }
+    if (funroot_k::set(index) != 0) {
+        std::cerr << "mroot: funroot switch to root " << index << " failed\n";
+        return false;
+    }
+    std::cout << "mroot: switched this process's root to " << index
+              << " (" << rp << ")\n";
+    return true;
+}
+
+bool kernel_sync() {
+    if (!funroot_k::available()) {
+        std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
+        return false;
+    }
+    unsigned ok = 0;
+    for (unsigned i = ROOT_MIN; i <= ROOT_MAX; ++i) {
+        std::string p = i == 0 ? "/" : roots_dir() + "/" + std::to_string(i);
+        MediaConf c;
+        bool has = i == 0 || access(p.c_str(), F_OK) == 0 || load_media_conf(i, c);
+        if (!has) continue;
+        if (i != 0) {
+            MultiRoot r(i);
+            p = r.status_path();
+        }
+        if (funroot_k::add(i, p) == 0) {
+            ok++;
+            std::cout << "funroot: registered " << i << " -> " << p << "\n";
+        }
+    }
+    std::cout << "funroot: " << ok << " root(s) registered\n";
+    return true;
+}
+#endif // __linux__
 
 bool list_roots() {
     std::cout << "index\tpath\tmedia\n";
@@ -935,6 +1100,11 @@ void print_usage(std::ostream &os) {
        << "  mount <index>                 mount virtual filesystems (proc, sys, dev, ...)\n"
        << "  umount <index>                unmount the virtual filesystems\n"
        << "  enter <index> [cmd...]        enter the root via a session-wide chroot (default /bin/sh)\n"
+       << "  kenter <index> [cmd...]       enter a root via the funroot kernel module (switch + exec)\n"
+       << "  kswitch <index>               switch this process's / to a root live (no exec)\n"
+       << "  kget                          show this process's current funroot index/path\n"
+       << "  klist                         list roots registered with the funroot kernel module\n"
+       << "  ksync                         register all configured roots with the kernel module\n"
        << "  status <index>                show the state of a root\n"
        << "  info <index>                  show detailed state (size, media, ...)\n"
        << "  list                          list configured roots\n"
@@ -1049,6 +1219,40 @@ int main(int argc, char **argv) {
         while (optind < argc) args.push_back(argv[optind++]);
         return r.enter(cmd, args, new_session, dns);
     }
+
+#if defined(__linux__) || defined(__LINUX__)
+    if (command == "kenter" || command == "kswitch") {
+        if (!need_index(a)) return 2;
+        if (command == "kswitch") return kernel_switch(a) ? 0 : 1;
+        std::string cmd = "/bin/sh";
+        std::vector<std::string> args;
+        if (optind < argc) cmd = argv[optind++];
+        while (optind < argc) args.push_back(argv[optind++]);
+        return kernel_enter(a, cmd, args, new_session, dns) ? 0 : 1;
+    }
+
+    if (command == "kget") {
+        unsigned idx;
+        std::string p;
+        if (funroot_k::get(idx, p) != 0) {
+            std::cerr << "mroot: funroot kernel module not available (/dev/funroot)\n";
+            return 1;
+        }
+        std::cout << "index: " << idx << "\n";
+        if (!p.empty()) std::cout << "path:  " << p << "\n";
+        return 0;
+    }
+
+    if (command == "klist") {
+        if (!funroot_k::available()) {
+            std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
+            return 1;
+        }
+        return funroot_k::list(std::cout) ? 0 : 1;
+    }
+
+    if (command == "ksync") return kernel_sync() ? 0 : 1;
+#endif
 
     if (command == "remove") {
         if (!need_index(a)) return 2;

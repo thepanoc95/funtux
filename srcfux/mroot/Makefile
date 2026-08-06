@@ -6,13 +6,15 @@ CFLAGS   ?= -O2 -Wall -Wextra -Werror
 MOTIFLIBS = -lXm -lXt -lX11
 LDLIBS    =
 
+FUNROOT_UAPI = ../funroot/uapi
+
 PREFIX   ?= /usr/local
 BINDIR    = $(PREFIX)/sbin
 
 all: mroot # mroot-gui
 
 mroot: main.cc
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $< $(LDLIBS) -o $@
+	$(CXX) $(CXXFLAGS) -I$(FUNROOT_UAPI) $(LDFLAGS) $< $(LDLIBS) -o $@
 
 # mroot-gui: mroot-gui.c
 #	$(CC) $(CFLAGS) $(LDFLAGS) $< $(MOTIFLIBS) -o $@
