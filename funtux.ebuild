@@ -1,0 +1,1 @@
+# gentoo ebuild for automizing the FunTux build process

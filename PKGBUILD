@@ -1,0 +1,1 @@
+# Pacman PKGBUILD for automatization of FunTux builds

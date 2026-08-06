@@ -1,2 +1,0 @@
-# override cgroup mount options
-#cgroup_opts=nodev,noexec,nosuid

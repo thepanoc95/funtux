@@ -1,7 +1,3 @@
-/*
- * funobj_test.c - smoke test for the FunTux object runtime.
- */
-
 #include "funobj.h"
 
 #include <stdio.h>

@@ -1,21 +1,3 @@
-/*
- * msubsys.c - FunTux sub-system (chroot) manager.
- *
- * Sub-systems are lightweight chroot environments for development and
- * building, kept alongside mroot roots. They live under /var/msubsys
- * (override with $MSUBSYS_DIR).
- *
- * Usage:
- *   msubsys create <name> [--copy <dir>]     create a sub-system skeleton
- *   msubsys enter <name> [cmd...]            chroot into a sub-system (default /bin/sh)
- *   msubsys exec <name> [--mount] <cmd...>   run a command inside a sub-system
- *   msubsys mount <name>                     mount virtual filesystems
- *   msubsys umount <name>                    unmount them
- *   msubsys list                             list sub-systems
- *   msubsys status <name>                    show a sub-system's state
- *   msubsys remove <name> [-f]               delete a sub-system
- */
-
 #define _DEFAULT_SOURCE
 
 #include <dirent.h>

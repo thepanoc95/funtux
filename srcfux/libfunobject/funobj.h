@@ -1,11 +1,3 @@
-/*
- * funobj.h - FunTux object runtime.
- *
- * A small Objective-C-style runtime in C: classes with inheritance,
- * objects holding ivars, and message dispatch. No build-time magic:
- * classes are plain structs populated at runtime.
- */
-
 #ifndef FUNOBJ_H
 #define FUNOBJ_H
 

@@ -1,6 +1,0 @@
-[submodule "openrc"]
-	path = openrc
-	url = https://github.com/OpenRC/openrc
-[submodule "pacman"]
-	path = pacman
-	url = https://gitlab.archlinux.org/pacman/pacman.git
