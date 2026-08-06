@@ -54,7 +54,7 @@
 
 #include "funroot.h"
 
-#define FUNROOT_VERSION "0.1.0"
+#define FUNROOT_VERSION "0.2.0"
 #define DRIVER_NAME "funroot"
 
 struct funroot_slot {
@@ -387,6 +387,41 @@ static struct miscdevice funroot_misc = {
 	.fops	= &funroot_fops,
 };
 
+/*
+ * Pin the host root ("/") at load time so index 0 always refers to the
+ * boot-time root, even for processes that have already switched into another
+ * root. Without this, a later switch back to index 0 would resolve "/"
+ * relative to whatever tree the caller currently sits in.
+ */
+static int __init funroot_register_host(void)
+{
+	struct path p;
+	int err;
+
+	err = kern_path("/", LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &p);
+	if (err) {
+		funroot_log("could not pin host root: %d", err);
+		return err;
+	}
+
+	mutex_lock(&funroot_lock);
+	if (!funroot_slots[0].used) {
+		funroot_slots[0].path = kstrdup("/", GFP_KERNEL);
+		if (!funroot_slots[0].path) {
+			mutex_unlock(&funroot_lock);
+			path_put(&p);
+			return -ENOMEM;
+		}
+		funroot_slots[0].p = p;
+		funroot_slots[0].used = true;
+		funroot_log("host root pinned at index 0");
+	} else {
+		path_put(&p);
+	}
+	mutex_unlock(&funroot_lock);
+	return 0;
+}
+
 static int __init funroot_init(void)
 {
 	int err;
@@ -394,6 +429,10 @@ static int __init funroot_init(void)
 	memset(funroot_slots, 0, sizeof(funroot_slots));
 
 	err = misc_register(&funroot_misc);
+	if (err)
+		return err;
+
+	err = funroot_register_host();
 	if (err)
 		return err;
 

@@ -1,6 +1,6 @@
 #define _BSD_SOURCE
 #define _DEFAULT_SOURCE
-#define _MROOT_VERSION "0.2.0"
+#define _MROOT_VERSION "0.3.0"
 
 #include <algorithm>
 #include <cstdlib>
@@ -81,6 +81,115 @@ struct MediaConf {
 std::string roots_dir() {
     if (const char *env = getenv("MROOT_ROOTS_DIR")) return env;
     return ROOTS_DIR;
+}
+
+bool ensure_dir(const std::string &path, mode_t mode);
+
+/* --- Bedrock Linux stratum integration -------------------------------- */
+
+bool bedrock_detected() {
+    struct stat st;
+    return stat("/bedrock/strata", &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+std::vector<std::string> bedrock_strata() {
+    std::vector<std::string> names;
+    DIR *d = opendir("/bedrock/strata");
+    if (!d) return names;
+    struct dirent *e;
+    while ((e = readdir(d))) {
+        if (e->d_name[0] == '.') continue;
+        std::string full = std::string("/bedrock/strata/") + e->d_name;
+        struct stat st;
+        if (stat(full.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+            names.push_back(e->d_name);
+    }
+    closedir(d);
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+/* Lowest unused root index in [1,255]; 0 means the table is full. */
+unsigned lowest_free_root_index() {
+    for (unsigned i = ROOT_MIN + 1; i <= ROOT_MAX; ++i) {
+        std::string p = roots_dir() + "/" + std::to_string(i);
+        struct stat st;
+        if (lstat(p.c_str(), &st) != 0) return i;
+    }
+    return 0;
+}
+
+/* If a /var/roots symlink already maps this stratum, return its index. */
+bool index_for_stratum(const std::string &name, unsigned &idx) {
+    std::string target = std::string("/bedrock/strata/") + name;
+    for (unsigned i = ROOT_MIN + 1; i <= ROOT_MAX; ++i) {
+        std::string p = roots_dir() + "/" + std::to_string(i);
+        char buf[4096];
+        ssize_t n = readlink(p.c_str(), buf, sizeof(buf) - 1);
+        if (n > 0) {
+            buf[n] = '\0';
+            if (target == buf) {
+                idx = i;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool list_strata() {
+    std::vector<std::string> names = bedrock_strata();
+    if (names.empty()) {
+        std::cout << "mroot: no Bedrock strata (/bedrock/strata not present)\n";
+        return true;
+    }
+    std::cout << "stratum\n";
+    for (const std::string &n : names) std::cout << n << "\n";
+    return true;
+}
+
+/*
+ * Map every Bedrock stratum under /bedrock/strata to a stable funroot
+ * index by symlinking /var/roots/<index> -> /bedrock/strata/<name>.
+ * Existing mappings are preserved; new strata grab the lowest free index.
+ * Once mapped, a stratum is a first-class root: `mroot kswitch <index>`
+ * switches the current process into that Bedrock stratum.
+ */
+bool bedrock_sync() {
+    if (!bedrock_detected()) {
+        std::cout << "mroot: no Bedrock strata (/bedrock/strata not present)\n";
+        return true;
+    }
+    std::vector<std::string> names = bedrock_strata();
+    std::string rd = roots_dir();
+    if (!ensure_dir(rd, 0755)) return false;
+    unsigned added = 0;
+    for (const std::string &name : names) {
+        unsigned idx;
+        if (index_for_stratum(name, idx)) {
+            std::cout << "mroot: stratum " << name
+                      << " already mapped to root " << idx << "\n";
+            continue;
+        }
+        idx = lowest_free_root_index();
+        if (idx == 0) {
+            std::cerr << "mroot: no free root index for stratum " << name << "\n";
+            return false;
+        }
+        std::string link = rd + "/" + std::to_string(idx);
+        std::string target = "/bedrock/strata/" + name;
+        if (symlink(target.c_str(), link.c_str()) != 0 && errno != EEXIST) {
+            std::cerr << "mroot: cannot link " << link << " -> " << target << ": "
+                      << strerror(errno) << "\n";
+            return false;
+        }
+        std::cout << "mroot: mapped stratum " << name << " -> root " << idx
+                  << " (" << target << ")\n";
+        added++;
+    }
+    std::cout << "mroot: bedrock sync complete (" << added << " new mapping(s), "
+              << names.size() << " stratum/strata total)\n";
+    return true;
 }
 
 bool require_root() {
@@ -540,7 +649,8 @@ bool copy_tree(const std::string &src, const std::string &dst,
                 break;
             }
             chmod(t.c_str(), st.st_mode & 07777);
-            (void)chown(t.c_str(), st.st_uid, st.st_gid);
+            int rc = chown(t.c_str(), st.st_uid, st.st_gid);
+            (void)rc;
         }
     }
     closedir(d);
@@ -563,6 +673,10 @@ public:
     const std::string &path() const { return path_; }
     bool is_host() const { return index_ == 0; }
     bool is_media() const { return media_.valid; }
+    bool is_stratum() const {
+        std::string rp = is_media() ? status_path() : path_;
+        return rp.compare(0, sizeof("/bedrock/strata/") - 1, "/bedrock/strata/") == 0;
+    }
     MediaConf &media() { return media_; }
 
     std::string status_path() const {
@@ -578,6 +692,11 @@ public:
         if (!require_root()) return false;
         std::string rp = work_path(*this);
         if (rp.empty()) return false;
+        if (is_stratum()) {
+            std::cout << "mroot: root " << index_
+                      << " is a Bedrock stratum; skeleton not needed\n";
+            return true;
+        }
         struct stat st;
         bool existed = (stat(rp.c_str(), &st) == 0);
         if (!ensure_dir(rp, 0755)) return false;
@@ -856,6 +975,7 @@ bool kernel_sync() {
         std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
         return false;
     }
+    if (!bedrock_sync()) return false;
     unsigned ok = 0;
     for (unsigned i = ROOT_MIN; i <= ROOT_MAX; ++i) {
         std::string p = i == 0 ? "/" : roots_dir() + "/" + std::to_string(i);
@@ -1099,12 +1219,15 @@ void print_usage(std::ostream &os) {
        << "  init <index> [--media <dev>]  create a root skeleton, optionally on removable media\n"
        << "  mount <index>                 mount virtual filesystems (proc, sys, dev, ...)\n"
        << "  umount <index>                unmount the virtual filesystems\n"
-       << "  enter <index> [cmd...]        enter the root via a session-wide chroot (default /bin/sh)\n"
+       << "  enter <index> [cmd...]        enter the root via the funroot kernel module (falls\n"
+       << "                                  back to a session-wide chroot if it is not loaded)\n"
        << "  kenter <index> [cmd...]       enter a root via the funroot kernel module (switch + exec)\n"
        << "  kswitch <index>               switch this process's / to a root live (no exec)\n"
        << "  kget                          show this process's current funroot index/path\n"
        << "  klist                         list roots registered with the funroot kernel module\n"
        << "  ksync                         register all configured roots with the kernel module\n"
+       << "  strata                        list Bedrock Linux strata\n"
+       << "  bedrock-sync                  map each Bedrock stratum to a root index\n"
        << "  status <index>                show the state of a root\n"
        << "  info <index>                  show detailed state (size, media, ...)\n"
        << "  list                          list configured roots\n"
@@ -1118,7 +1241,10 @@ void print_usage(std::ostream &os) {
        << "  login <user> [index]          make a user's login enter a root (0 = host)\n\n"
        << "Roots live under " << ROOTS_DIR << "/<index> (override with $MROOT_ROOTS_DIR);\n"
        << "index 0 is the host root (/). The enter command can be used as a login shell\n"
-       << "to start a whole session inside a root.\n\n"
+       << "to start a whole session inside a root. Set MROOT_NO_KERNEL=1 to force the\n"
+       << "chroot-based enter even when the funroot kernel module is loaded.\n\n"
+       << "Bedrock Linux: `mroot bedrock-sync` maps each /bedrock/strata/<name> to a root\n"
+       << "index, so switching a process's root is the same as switching its Bedrock stratum.\n\n"
        << "Options:\n"
        << "  -d, --dns          bind-mount the host's /etc/resolv.conf into the root\n"
        << "  -s, --session      create a new session (setsid) before entering\n"
@@ -1174,6 +1300,8 @@ int main(int argc, char **argv) {
 
     if (command == "list") return list_roots() ? 0 : 1;
     if (command == "list-media") return list_media() ? 0 : 1;
+    if (command == "strata") return list_strata() ? 0 : 1;
+    if (command == "bedrock-sync") return bedrock_sync() ? 0 : 1;
 
     if (optind >= argc) {
         std::cerr << "mroot: missing arguments for '" << command << "'\n";
@@ -1217,6 +1345,14 @@ int main(int argc, char **argv) {
         std::vector<std::string> args;
         if (optind < argc) cmd = argv[optind++];
         while (optind < argc) args.push_back(argv[optind++]);
+        /*
+         * Kernel-first: when the funroot module is loaded, entering a root
+         * is a real kernel-enforced root switch rather than a chroot.
+         * Set MROOT_NO_KERNEL=1 (or just unload the module) to force the
+         * plain chroot path.
+         */
+        if (!getenv("MROOT_NO_KERNEL") && funroot_k::available())
+            return kernel_enter(a, cmd, args, new_session, dns) ? 0 : 1;
         return r.enter(cmd, args, new_session, dns);
     }
 

@@ -1,0 +1,80 @@
+#!/bedrock/cross/bin/sh
+#
+# FunTux Linux - a package-manager-less multiroot Linux.
+#
+# This stratum brings FunTux's multiroot tooling (mroot, froot, msubsys,
+# funroot, libfunobj) plus the base FunTux configuration into a Bedrock
+# Linux stratum.  Once installed as the "funtux" stratum, every mroot root
+# index is also a Bedrock stratum (`brl enter funtux` -> `mroot`).
+#
+# Building:
+#   bpt build funtux-linux@0.1.0.bbuild
+#
+# By default the source tarball is fetched from $homepage.  For local
+# development you can point at a local checkout instead:
+#   FUNTUX_SRC=/path/to/funtux bpt build funtux-linux@0.1.0.bbuild
+
+# Package metadata
+pkgname="funtux-linux"
+pkgver="0.1.0"
+pkgdesc="FunTux Linux multiroot tooling stratum (package-manager-less multiroot Linux)"
+homepage="N/A"
+license="GPL-2.0-only"
+depends=""
+backup=""
+
+# Build time information
+makearch="native"
+makebins=""
+makedepends=""
+
+source=""
+sha256sums=""
+
+build() {
+	# Locate the FunTux source tree.  Prefer an explicit local checkout,
+	# then an extracted tarball in the workdir.
+	if [ -n "${FUNTUX_SRC}" ]; then
+		funtux_src="${FUNTUX_SRC}"
+	elif [ -d "${workdir}/funtux-linux-${pkgver}" ]; then
+		funtux_src="${workdir}/funtux-linux-${pkgver}"
+	else
+		echo "funtux-linux: no source tree found" >&2
+		echo "  set FUNTUX_SRC to a local checkout, or add a source URL" >&2
+		exit 1
+	fi
+	cd "${funtux_src}" || exit 1
+
+	# Multiroot kernel module UAPI client + userspace tools.
+	make -C srcfux/bin clean >/dev/null
+	make -C srcfux/bin
+	make -C srcfux/mroot clean >/dev/null
+	make -C srcfux/mroot
+
+	# Object-model library and the froot tool built on it.
+	make -C srcfux/libfunobject clean >/dev/null
+	make -C srcfux/libfunobject
+
+	# Stage the tools into the stratum root.
+	install -d "${pkgdir}/sbin" "${pkgdir}/usr/lib" "${pkgdir}/usr/include/funobj"
+	install -m 755 srcfux/bin/msubsys "${pkgdir}/sbin/msubsys"
+	install -m 755 srcfux/bin/funroot "${pkgdir}/sbin/funroot"
+	install -m 755 srcfux/mroot/mroot "${pkgdir}/sbin/mroot"
+	install -m 755 srcfux/libfunobject/froot "${pkgdir}/sbin/froot"
+	install -m 644 srcfux/libfunobject/libfunobj.a "${pkgdir}/usr/lib/libfunobj.a"
+	install -m 755 srcfux/libfunobject/libfunobj.so "${pkgdir}/usr/lib/libfunobj.so"
+	install -m 644 srcfux/libfunobject/funobj.h "${pkgdir}/usr/include/funobj/funobj.h"
+	install -m 644 srcfux/libfunobject/funroot.h "${pkgdir}/usr/include/funobj/funroot.h"
+
+	# Base FunTux configuration.
+	install -d "${pkgdir}/etc"
+	install -m 644 filesfux/* "${pkgdir}/etc/" 2>/dev/null || :
+	install -m 644 srcfux/etc/* "${pkgdir}/etc/" 2>/dev/null || :
+
+	# funroot kernel module source, for building against the target kernel
+	# (bpt cannot build kernel modules: no kernel headers).
+	install -d "${pkgdir}/usr/src"
+	cp -r srcfux/funroot "${pkgdir}/usr/src/funroot"
+	find "${pkgdir}/usr/src/funroot" -type d -exec chmod 755 {} \;
+	find "${pkgdir}/usr/src/funroot" -type f -exec chmod 644 {} \;
+}

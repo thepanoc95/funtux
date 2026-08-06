@@ -326,7 +326,8 @@ static int chroot_exec(const char *rp, const char *cmd, char *const *argv,
         return 1;
     }
     char term[64] = {0};
-    if (const char *t = getenv("TERM")) snprintf(term, sizeof(term), "%s", t);
+    const char *t = getenv("TERM");
+    if (t) snprintf(term, sizeof(term), "%s", t);
     clearenv();
     setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
     setenv("HOME", "/root", 1);
