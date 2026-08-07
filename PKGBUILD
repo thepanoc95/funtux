@@ -19,7 +19,7 @@ arch=('aarch64' 'x86_64')
 url=""
 license=('GPL-2.0-only')
 depends=()
-makedepends=('gcc' 'g++' 'make')
+makedepends=('gcc' 'make' 'git')
 source=()
 sha256sums=()
 
@@ -27,7 +27,7 @@ funtux_srcdir() {
     if [ -n "${FUNTUX_SRC}" ]; then
         printf '%s\n' "${FUNTUX_SRC}"
     else
-        printf '%s\n' "${srcdir}/funtux-linux-${pkgver}"
+        printf '%s\n' "${startdir}"
     fi
 }
 
