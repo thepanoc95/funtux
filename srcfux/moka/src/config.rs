@@ -1,25 +1,15 @@
-//! Global configuration: filesystem layout, parallelism, feature defaults.
-
 use crate::util::{read_lines, R};
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// Root of the FunTux system. Everything (repo, cache, vdb) hangs off this.
     pub root: PathBuf,
-    /// Where portage-style ebuilds / recipes live (git tree).
     pub repo_dir: PathBuf,
-    /// Where git repo is cloned/synced.
     pub repo_src: PathBuf,
-    /// Build cache (sources, distfiles).
     pub cache_dir: PathBuf,
-    /// Binary/vdb metadata for installed packages.
     pub vdb_dir: PathBuf,
-    /// Temp dir for builds.
     pub tmp_dir: PathBuf,
-    /// Number of parallel compile jobs.
     pub jobs: usize,
-    /// Chroot root used during install (may equal root).
     pub chroot: PathBuf,
 }
 
@@ -39,7 +29,6 @@ impl Config {
         Self::from_root(std::path::Path::new("/"))
     }
 
-    /// Config rooted at `root` (used for sandboxes/tests).
     pub fn from_root(root: &std::path::Path) -> Self {
         let repo_dir = root.join("var/lib/funtux/repo");
         Self {
@@ -70,7 +59,6 @@ impl Config {
     }
 }
 
-/// Read `MAKE_OPTS`-style knobs from a config file if present.
 pub fn load_make_conf(cfg: &Config) -> Vec<String> {
     let p = cfg.root.join("etc/funtux/make.conf");
     read_lines(&p)

@@ -1,3 +1,7 @@
 *.tar.*
 pkg/
 src/
+target/
+*.iso
+*.zip
+build/

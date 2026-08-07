@@ -1,9 +1,4 @@
-//! Recipe generator: run an interactive build session and emit a recipe.
-//!
-//! `moka recipe-gen <git-url> [version]` clones the upstream repo, drops the
-//! user into an interactive shell inside it, records every command typed, and
-//! then writes a recipe (meta.ebuild + src_*.sh phase files) to the current
-//! directory.
+//! Recipe generator: record an interactive build session into a recipe.
 
 use crate::config::Config;
 use crate::util::{ensure_dir, sh_ok, write_file, R, sq};
@@ -64,8 +59,7 @@ pub fn recipe_gen(cfg: &Config, url: &str, version: &str) -> R<()> {
         .status()
         .map_err(|e| format!("failed to run interactive session: {}", e))?;
     if !status.success() {
-        // The shell's exit status reflects the last command, which may have
-        // failed; the recording is still valid.
+        // exit status reflects the last command, but the recording is valid
         eprintln!(
             "warning: session exited with status {}; using recorded commands",
             status
@@ -96,7 +90,7 @@ pub fn repo_name(url: &str) -> String {
     }
 }
 
-/// Shell rc that records every typed command, plus `ftx-phase` markers.
+// shell rc that records every typed command + ftx-phase markers
 fn rc_script(name: &str) -> String {
     let ps1 = format!("PS1='\\u@funtux:{name}:\\w\\$ '");
     let banner = format!("echo \"You are in: $PWD (source of {name})\"");
@@ -117,7 +111,7 @@ fn rc_script(name: &str) -> String {
         "echo 'Every command you type is recorded. Type exit when done.'",
         "echo 'Optional markers: ftx-phase src_configure / src_compile / src_install'",
         "echo '======================================'",
-        // Trap must be registered last so the banner is not recorded.
+        // trap last so the banner is not recorded
         "trap 'printf \"%s\\n\" \"$BASH_COMMAND\" >> \"$FTX_RECORD\"' DEBUG",
     ];
     lines.join("\n")
@@ -138,7 +132,7 @@ fn parse_record(record: &Path) -> R<Vec<(String, String)>> {
             marker = m.trim().to_string();
             continue;
         }
-        // Skip recorded noise: phase helper calls, `exit`, terminal title sets.
+        // skip recorded noise: ftx-phase calls, `exit`, terminal title sets
         if t.starts_with("ftx-phase") || t == "exit" || t.contains("\\033]0;") {
             continue;
         }
@@ -147,8 +141,7 @@ fn parse_record(record: &Path) -> R<Vec<(String, String)>> {
     Ok(out)
 }
 
-/// Group recorded commands into phases. Prefers explicit `ftx-phase` markers;
-/// falls back to a heuristic split when no markers were used.
+// group commands into phases, preferring explicit markers
 fn split_phases(records: Vec<(String, String)>) -> Vec<(String, Vec<String>)> {
     let has_markers = records.iter().any(|(m, _)| !m.is_empty());
     if !has_markers {
@@ -251,7 +244,7 @@ fn write_recipe(
     );
     write_file(&dir.join("meta.ebuild"), &meta)?;
     for (phase, cmds) in phases {
-        // Recorded commands assume the source root; each phase starts there.
+        // recorded commands assume the source root; each phase starts there
         let mut script = String::from("cd \"$S\"\n");
         for c in cmds {
             script.push_str(c);

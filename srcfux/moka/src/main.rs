@@ -1,5 +1,3 @@
-//! moka: Portage-like source-based package manager for FunTux Linux.
-
 use moka::{build, config::Config, pack, pkg, recipe, repo, resolve, util, util::R};
 use std::path::PathBuf;
 
@@ -46,7 +44,6 @@ fn run(cfg: &Config, args: &[String]) -> R<()> {
             let query = args.get(1).ok_or("usage: moka build <atom>")?;
             cfg.ensure_dirs()?;
             repo::ensure_repo(cfg)?;
-            // Install any missing deps into the root, then stage-build the target.
             let plan = resolve::resolve(cfg, &[query.to_string()])?;
             for p in plan.iter().take(plan.len().saturating_sub(1)) {
                 install_pkg(cfg, p)?;
@@ -78,7 +75,6 @@ fn run(cfg: &Config, args: &[String]) -> R<()> {
             let query = args.get(1).ok_or("usage: moka pkg <atom> [outdir]")?;
             cfg.ensure_dirs()?;
             repo::ensure_repo(cfg)?;
-            // Install missing deps so the build can link against them.
             let plan = resolve::resolve(cfg, &[query.to_string()])?;
             for p in plan.iter().take(plan.len().saturating_sub(1)) {
                 install_pkg(cfg, p)?;

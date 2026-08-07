@@ -10,21 +10,22 @@ FUNROOT_UAPI = ../funroot/uapi
 
 PREFIX   ?= /usr/local
 BINDIR    = $(PREFIX)/sbin
+BUILDDIR := $(CURDIR)/../../build/mroot
 
-all: mroot # mroot-gui
+all: $(BUILDDIR) mroot
 
-mroot: main.cc
-	$(CXX) $(CXXFLAGS) -I$(FUNROOT_UAPI) $(LDFLAGS) $< $(LDLIBS) -o $@
+mroot: main.cc | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -I$(FUNROOT_UAPI) $(LDFLAGS) $< $(LDLIBS) -o $(BUILDDIR)/$@
 
-# mroot-gui: mroot-gui.c
-#	$(CC) $(CFLAGS) $(LDFLAGS) $< $(MOTIFLIBS) -o $@
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
 
 clean:
-	rm -f mroot mroot-gui
+	rm -rf $(BUILDDIR)
 
 install: all
 	install -d $(DESTDIR)$(BINDIR)
-	install -m 755 mroot $(DESTDIR)$(BINDIR)/mroot
+	install -m 755 $(BUILDDIR)/mroot $(DESTDIR)$(BINDIR)/mroot
 #	install -m 755 mroot-gui $(DESTDIR)$(BINDIR)/mroot-gui
 
 uninstall:

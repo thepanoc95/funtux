@@ -15,11 +15,8 @@ DEPEND=""
 RDEPEND="${DEPEND}"
 BDEPEND="sys-devel/gcc sys-devel/make"
 
-# Building mirrors funtux-linux@<PV>.bbuild.  Two ways to supply the FunTux
-# source:
-#   - local checkout:  FUNTUX_SRC=/path/to/funtux emerge funtux
-#   - release tarball: set SRC_URI and put funtux-linux-<PV>.tar.xz in
-#     ${DISTDIR} (then src_unpack uses `default`).
+# Building mirrors funtux-linux@<PV>.bbuild.  Point FUNTUX_SRC at a local
+# checkout, or set SRC_URI to a release tarball in ${DISTDIR}.
 
 S="${WORKDIR}/funtux-linux-${PV}"
 

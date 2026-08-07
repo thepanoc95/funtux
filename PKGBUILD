@@ -1,15 +1,8 @@
 # Maintainer: FunTux
 #
-# Automates the FunTux Linux build for pacman (Arch Linux).  Mirrors
-# funtux-linux@<pkgver>.bbuild: builds the multiroot tooling and stages it
-# plus the base FunTux configuration into an Arch package.
-#
-# Usage from a checkout of the repo:
-#   FUNTUX_SRC=/path/to/funtux makepkg -f
-#
-# For a published release, instead set source= and sha256sums= to a tarball
-# named funtux-linux-<pkgver>.tar.* (extraction places it in $srcdir and
-# build() picks it up the same way the bbuild does).
+# Mirrors funtux-linux@<pkgver>.bbuild.  Use from a checkout with
+# FUNTUX_SRC=/path/to/funtux makepkg -f, or set source=/sha256sums= to a
+# release tarball (build() picks it up from $srcdir).
 
 pkgname=funtux-linux
 pkgver=0.1.0
@@ -18,6 +11,25 @@ pkgdesc="FunTux Linux multiroot tooling (package-manager-less multiroot Linux)"
 arch=('aarch64' 'x86_64')
 url=""
 license=('GPL-2.0-only')
+backup=(
+    'etc/fstab'
+    'etc/gettytab'
+    'etc/group'
+    'etc/hostname'
+    'etc/hosts'
+    'etc/issue'
+    'etc/ld.so.conf'
+    'etc/locale.sh'
+    'etc/motd'
+    'etc/os-release'
+    'etc/passwd'
+    'etc/profile'
+    'etc/shells'
+    'etc/sysctl'
+    'etc/sysusers'
+    'etc/tmpfiles'
+)
+install=funtux-linux.install
 depends=()
 makedepends=('gcc' 'make' 'git')
 source=()
@@ -56,12 +68,12 @@ package() {
 
     install -d "${pkgdir}/sbin" "${pkgdir}/usr/lib" "${pkgdir}/usr/include/funobj" "${pkgdir}/etc" "${pkgdir}/usr/src"
 
-    install -m 755 srcfux/bin/msubsys "${pkgdir}/sbin/msubsys"
-    install -m 755 srcfux/bin/funroot "${pkgdir}/sbin/funroot"
-    install -m 755 srcfux/mroot/mroot "${pkgdir}/sbin/mroot"
-    install -m 755 srcfux/libfunobject/froot "${pkgdir}/sbin/froot"
-    install -m 644 srcfux/libfunobject/libfunobj.a "${pkgdir}/usr/lib/libfunobj.a"
-    install -m 755 srcfux/libfunobject/libfunobj.so "${pkgdir}/usr/lib/libfunobj.so"
+    install -m 755 build/bin/msubsys "${pkgdir}/sbin/msubsys"
+    install -m 755 build/bin/funroot "${pkgdir}/sbin/funroot"
+    install -m 755 build/mroot/mroot "${pkgdir}/sbin/mroot"
+    install -m 755 build/libfunobject/froot "${pkgdir}/sbin/froot"
+    install -m 644 build/libfunobject/libfunobj.a "${pkgdir}/usr/lib/libfunobj.a"
+    install -m 755 build/libfunobject/libfunobj.so "${pkgdir}/usr/lib/libfunobj.so"
     install -m 644 srcfux/libfunobject/funobj.h "${pkgdir}/usr/include/funobj/funobj.h"
     install -m 644 srcfux/libfunobject/funroot.h "${pkgdir}/usr/include/funobj/funroot.h"
 

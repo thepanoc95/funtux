@@ -4,18 +4,22 @@ MOTIFLIBS  = -lXm -lXt -lX11
 
 PREFIX ?= /usr/local
 BINDIR  = $(PREFIX)/sbin
+BUILDDIR := $(CURDIR)/../../build/systembuilder
 
-all: SystemBuilder
+all: $(BUILDDIR) SystemBuilder
 
-SystemBuilder: SystemBuilder.c
-	$(CC) $(CFLAGS) $(LDFLAGS) $< $(MOTIFLIBS) -o $@
+SystemBuilder: SystemBuilder.c | $(BUILDDIR)
+	$(CC) $(CFLAGS) $(LDFLAGS) $< $(MOTIFLIBS) -o $(BUILDDIR)/$@
+
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
 
 clean:
-	rm -f SystemBuilder
+	rm -rf $(BUILDDIR)
 
-install: SystemBuilder
+install: all
 	install -d $(DESTDIR)$(BINDIR)
-	install -m 755 SystemBuilder $(DESTDIR)$(BINDIR)/SystemBuilder
+	install -m 755 $(BUILDDIR)/SystemBuilder $(DESTDIR)$(BINDIR)/SystemBuilder
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/SystemBuilder

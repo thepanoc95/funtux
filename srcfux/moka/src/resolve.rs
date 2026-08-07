@@ -1,17 +1,9 @@
-//! Dependency resolution: walk `DEPEND`/`RDEPEND`/`BDEPEND` across the recipe
-//! tree and produce a build/install order (dependencies first).
-//!
-//! Already-installed packages (per the vdb) are pruned. Cycles are reported
-//! with the offending chain rather than recursing forever.
-
 use crate::config::Config;
 use crate::pkg::{InstalledPkg, Package};
 use crate::repo;
 use crate::util::R;
 use std::collections::HashMap;
 
-/// Resolve `roots` plus all transitive dependencies into install order.
-/// Returns an empty vec when everything is already installed.
 pub fn resolve(cfg: &Config, roots: &[String]) -> R<Vec<Package>> {
     let installed = crate::pkg::installed_packages(&cfg.vdb_dir);
     let mut order: Vec<Package> = Vec::new();
@@ -23,7 +15,7 @@ pub fn resolve(cfg: &Config, roots: &[String]) -> R<Vec<Package>> {
     Ok(order)
 }
 
-/// DFS walk. `colors`: 0 = unvisited, 1 = on the current stack, 2 = done.
+// dfs walk; colors: 0 unvisited, 1 on stack, 2 done
 fn walk(
     cfg: &Config,
     atom: &str,
@@ -64,8 +56,7 @@ mod tests {
     use super::*;
     use crate::config::Config;
 
-    /// Build a recipe tree from `cat/name-version -> deps` spec.
-    /// `spec` maps `cat/name-version` to a list of dependency atom strings.
+    // build a recipe tree from `cat/name-version -> deps` spec
     fn make_repo(spec: &[(&str, &[&str])]) -> Config {
         let tmp = std::env::temp_dir().join(format!(
             "moka-resolve-{}-{}",
@@ -154,8 +145,7 @@ mod tests {
             ("app-misc/hello-1.0", &["gcc"]),
         ]);
         let plan = resolve(&cfg, &["app-misc/hello-1.0".to_string()]).unwrap();
-        // gcc resolved via bare name, then installed pruning would see it;
-        // with nothing installed the full chain comes back
+        // gcc resolved via bare name, nothing installed so full chain back
         let got = names(&plan);
         assert!(got.iter().any(|n| n == "sys-devel/gcc-12.2.0"));
         assert_eq!(got.last().unwrap(), "app-misc/hello-1.0");

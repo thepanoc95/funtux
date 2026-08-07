@@ -1,11 +1,8 @@
-//! Package model + installed-database (vdb) read/write.
-
 use crate::util::{read_lines, write_file, R};
 use std::fmt;
 use std::path::Path;
 use std::str::FromStr;
 
-/// Atom: category/name-version (e.g. `sys-devel/gcc-12.2.0`).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Atom {
     pub category: String,
@@ -26,7 +23,6 @@ impl Atom {
         format!("{}/{}-{}", self.category, self.name, self.version)
     }
 
-    /// Match a raw atom string (`category/name[-version]` or `name[-version]`).
     pub fn matches(&self, raw: &str) -> bool {
         if let Some((cat, rest)) = raw.split_once('/') {
             if self.category != cat {
@@ -68,24 +64,15 @@ impl FromStr for Atom {
     }
 }
 
-/// A recipe on disk (ebuild-like): metadata + phases.
 #[derive(Clone, Debug)]
 pub struct Package {
     pub atom: Atom,
-    /// Build-phase shell fragments, keyed by phase name.
     pub phases: std::collections::HashMap<String, String>,
-    /// Key=value metadata (DEPEND, SRC_URI, etc.).
     pub ebuild: std::collections::HashMap<String, String>,
-    /// User-visible description.
     pub description: String,
 }
 
 impl Package {
-    /// Parse `DEPEND`/`RDEPEND`/`BDEPEND` into plain atom strings.
-    ///
-    /// Only plain atoms are supported (`category/name[-version]` or
-    /// `name[-version]`). Operators, use-flag groups, and slots are rejected
-    /// loudly rather than silently ignored.
     pub fn deps(&self) -> R<Vec<String>> {
         let mut out: Vec<String> = Vec::new();
         for key in ["DEPEND", "RDEPEND", "BDEPEND"] {
@@ -111,7 +98,7 @@ impl Package {
                     ));
                 }
                 if self.atom.matches(tok) {
-                    continue; // self-dependency is a no-op
+                    continue; // self-depend is a no-op
                 }
                 if !out.iter().any(|o| o == tok) {
                     out.push(tok.to_string());
@@ -126,7 +113,6 @@ impl Package {
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
             .ok_or_else(|| format!("bad dir {}", dir.display()))?;
-        // base is `category/name-version` or `category/name`; find ebuild file.
         let atom = parse_atom_from_dir(dir, &base)?;
         let meta = read_lines(&dir.join("meta.ebuild"));
         let mut ebuild = std::collections::HashMap::new();
@@ -138,9 +124,7 @@ impl Package {
                     ebuild.insert(k.trim().to_string(), v.trim().to_string());
                 }
             }
-            // inline phase block marker: `src_compile() { ... }`
         }
-        // Load phase scripts.
         for (phase, fname) in [
             ("pkg_setup", "pkg_setup.sh"),
             ("src_prepare", "src_prepare.sh"),
@@ -168,7 +152,7 @@ impl Package {
 }
 
 fn parse_atom_from_dir(dir: &Path, base: &str) -> R<Atom> {
-    // Expected layout: repo/<category>/<name-version>/
+    // layout: repo/<category>/<name-version>/
     let cat = dir
         .parent()
         .and_then(|p| p.file_name())
@@ -180,16 +164,13 @@ fn parse_atom_from_dir(dir: &Path, base: &str) -> R<Atom> {
     Ok(Atom::new(&cat, name, version))
 }
 
-/// Installed package metadata (vdb).
 #[derive(Clone, Debug)]
 pub struct InstalledPkg {
     pub atom: Atom,
-    /// Contents manifest: one relpath per line.
     pub files: Vec<String>,
     pub build_log: String,
 }
 
-/// List installed packages (vdb dirs).
 pub fn installed_packages(vdb: &Path) -> Vec<InstalledPkg> {
     let mut out = Vec::new();
     for cat in crate::util::list_dir(vdb).unwrap_or_default() {
@@ -217,7 +198,6 @@ pub fn installed_packages(vdb: &Path) -> Vec<InstalledPkg> {
     out
 }
 
-/// Write the vdb entry for a freshly installed package.
 pub fn record_install(vdb: &Path, pkg: &InstalledPkg) -> R<()> {
     let dir = vdb
         .join(&pkg.atom.category)

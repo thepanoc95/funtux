@@ -1,9 +1,5 @@
-/*
- * funroot.c - FunTux multiroot object model (libfunobject-based).
- *
- * Implements FunMount, FunRoot and FunStratum. Roots switch via the funroot
- * kernel module when it is loaded, and fall back to chroot() otherwise.
- */
+/* funroot.c - FunTux multiroot object model (libfunobject).
+ * FunMount / FunRoot / FunStratum. kernel module if loaded, else chroot. */
 
 #define _DEFAULT_SOURCE
 
@@ -27,8 +23,6 @@
 
 #define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0]))
 
-/* --- instance data ------------------------------------------------------ */
-
 struct fun_mount_ivars {
     const char *source;
     const char *target;
@@ -39,15 +33,13 @@ struct fun_mount_ivars {
 
 struct fun_root_ivars {
     unsigned index;         /* 0 = host root */
-    char *path;             /* "/" or <base>/<index> */
+    char *path;
 };
 
 struct fun_stratum_ivars {
     struct fun_root_ivars root;
-    char *name;             /* Bedrock stratum name, "" for "any" */
+    char *name;             /* bedrock stratum name, "" = "any" */
 };
-
-/* --- shared configuration ----------------------------------------------- */
 
 static const struct fun_mount_ivars vfs_mounts[] = {
     { "proc",     "/proc",     "proc",     MS_NOSUID | MS_NOEXEC | MS_NODEV, "" },
@@ -62,8 +54,6 @@ static const struct fun_mount_ivars vfs_mounts[] = {
 static const char *umount_targets[] = {
     "/etc/resolv.conf", "/run", "/tmp", "/dev/shm", "/dev/pts", "/dev", "/sys", "/proc",
 };
-
-/* --- helpers ------------------------------------------------------------ */
 
 const char *fun_root_base(void)
 {
@@ -126,8 +116,6 @@ static int is_mounted(const char *path)
     return found;
 }
 
-/* --- funroot kernel module client --------------------------------------- */
-
 static int fk_available(void)
 {
     int fd = open("/dev/funroot", O_RDWR | O_CLOEXEC);
@@ -165,8 +153,6 @@ static int fk_set(unsigned index)
     close(fd);
     return rc;
 }
-
-/* --- Bedrock stratum helpers -------------------------------------------- */
 
 static const char *strata_dir(void)
 {
@@ -249,8 +235,6 @@ static int index_for_stratum(const char *name, unsigned *out)
     return 0;
 }
 
-/* --- FunMount methods ---------------------------------------------------- */
-
 static FunValue fm_init(FunObject *self, FunArgs args)
 {
     (void)self;
@@ -327,8 +311,6 @@ static const FunMethod fun_mount_methods[] = {
     { "is-mounted", fm_is_mounted },
     { "describe", fm_describe },
 };
-
-/* --- FunRoot methods ----------------------------------------------------- */
 
 static FunValue fr_init(FunObject *self, FunArgs args)
 {
@@ -611,8 +593,6 @@ static const FunMethod fun_root_methods[] = {
     { "bedrock-sync", fr_bedrock_sync },
 };
 
-/* --- FunStratum methods --------------------------------------------------- */
-
 static FunValue fs_init(FunObject *self, FunArgs args)
 {
     (void)args;
@@ -651,8 +631,6 @@ static const FunMethod fun_stratum_methods[] = {
     { "name", fs_name },
     { "describe", fs_describe },
 };
-
-/* --- class registry + factories ------------------------------------------ */
 
 static struct {
     FunClass *mount;

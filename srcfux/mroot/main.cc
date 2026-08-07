@@ -85,8 +85,6 @@ std::string roots_dir() {
 
 bool ensure_dir(const std::string &path, mode_t mode);
 
-/* --- Bedrock Linux stratum integration -------------------------------- */
-
 bool bedrock_detected() {
     struct stat st;
     return stat("/bedrock/strata", &st) == 0 && S_ISDIR(st.st_mode);
@@ -109,7 +107,7 @@ std::vector<std::string> bedrock_strata() {
     return names;
 }
 
-/* Lowest unused root index in [1,255]; 0 means the table is full. */
+/* lowest free index in [1,255]; 0 = table full */
 unsigned lowest_free_root_index() {
     for (unsigned i = ROOT_MIN + 1; i <= ROOT_MAX; ++i) {
         std::string p = roots_dir() + "/" + std::to_string(i);
@@ -119,7 +117,7 @@ unsigned lowest_free_root_index() {
     return 0;
 }
 
-/* If a /var/roots symlink already maps this stratum, return its index. */
+/* index a stratum is already mapped to, if any */
 bool index_for_stratum(const std::string &name, unsigned &idx) {
     std::string target = std::string("/bedrock/strata/") + name;
     for (unsigned i = ROOT_MIN + 1; i <= ROOT_MAX; ++i) {
@@ -148,13 +146,7 @@ bool list_strata() {
     return true;
 }
 
-/*
- * Map every Bedrock stratum under /bedrock/strata to a stable funroot
- * index by symlinking /var/roots/<index> -> /bedrock/strata/<name>.
- * Existing mappings are preserved; new strata grab the lowest free index.
- * Once mapped, a stratum is a first-class root: `mroot kswitch <index>`
- * switches the current process into that Bedrock stratum.
- */
+/* symlink each bedrock stratum to a root index; existing mappings stay */
 bool bedrock_sync() {
     if (!bedrock_detected()) {
         std::cout << "mroot: no Bedrock strata (/bedrock/strata not present)\n";
@@ -309,41 +301,41 @@ bool run_command(const std::vector<std::string> &args) {
 }
 
 #if defined(__linux__) || defined(__LINUX__)
-void make_session() {
-    if (getsid(0) == getpid()) return;
-    if (setsid() < 0) {
-        if (errno == EPERM) {
-            pid_t pid = fork();
-            if (pid > 0) _exit(0);
-            if (pid < 0) return;
-            if (setsid() < 0) return;
-        } else {
-            return;
+    void make_session() {
+        if (getsid(0) == getpid()) return;
+        if (setsid() < 0) {
+            if (errno == EPERM) {
+                pid_t pid = fork();
+                if (pid > 0) _exit(0);
+                if (pid < 0) return;
+                if (setsid() < 0) return;
+            } else {
+                return;
+            }
         }
+        if (isatty(0)) ioctl(0, TIOCSCTTY, 0);
     }
-    if (isatty(0)) ioctl(0, TIOCSCTTY, 0);
-}
 
-int exec_prepared(const std::string &cmd, const std::vector<std::string> &args,
-                  bool new_session) {
-    char term[64] = {0};
-    if (const char *t = getenv("TERM")) strncpy(term, t, sizeof(term) - 1);
-    clearenv();
-    setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
-    setenv("HOME", "/root", 1);
-    setenv("TERM", term[0] ? term : "linux", 1);
-    setenv("SHELL", cmd.c_str(), 1);
-    setenv("USER", "root", 1);
-    setenv("LOGNAME", "root", 1);
-    if (new_session) make_session();
-    std::vector<char *> argv;
-    argv.push_back(const_cast<char *>(cmd.c_str()));
-    for (const std::string &a : args) argv.push_back(const_cast<char *>(a.c_str()));
-    argv.push_back(nullptr);
-    execvp(argv[0], argv.data());
-    std::cerr << "mroot: exec " << cmd << ": " << strerror(errno) << "\n";
-    return 127;
-}
+    int exec_prepared(const std::string &cmd, const std::vector<std::string> &args,
+                      bool new_session) {
+        char term[64] = {0};
+        if (const char *t = getenv("TERM")) strncpy(term, t, sizeof(term) - 1);
+        clearenv();
+        setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
+        setenv("HOME", "/root", 1);
+        setenv("TERM", term[0] ? term : "linux", 1);
+        setenv("SHELL", cmd.c_str(), 1);
+        setenv("USER", "root", 1);
+        setenv("LOGNAME", "root", 1);
+        if (new_session) make_session();
+        std::vector<char *> argv;
+        argv.push_back(const_cast<char *>(cmd.c_str()));
+        for (const std::string &a : args) argv.push_back(const_cast<char *>(a.c_str()));
+        argv.push_back(nullptr);
+        execvp(argv[0], argv.data());
+        std::cerr << "mroot: exec " << cmd << ": " << strerror(errno) << "\n";
+        return 127;
+    }
 #endif // __linux__
 
 std::string fs_type_of(const std::string &dev) {
@@ -841,159 +833,159 @@ std::string work_path(MultiRoot &r) {
 }
 
 #if defined(__linux__) || defined(__LINUX__)
-namespace funroot_k {
+    namespace funroot_k {
 
-constexpr const char *DEV = "/dev/funroot";
+        constexpr const char *DEV = "/dev/funroot";
 
-int open_dev() {
-    return ::open(DEV, O_RDWR | O_CLOEXEC);
-}
-
-bool available() {
-    int fd = open_dev();
-    if (fd < 0) return false;
-    close(fd);
-    return true;
-}
-
-int add(unsigned index, const std::string &path) {
-    int fd = open_dev();
-    if (fd < 0) return -1;
-    struct funroot_req req{};
-    req.index = index;
-    strncpy(req.path, path.c_str(), sizeof(req.path) - 1);
-    int rc = ioctl(fd, FUNROOT_ADD, &req);
-    if (rc != 0 && errno == EBUSY) rc = 0;
-    close(fd);
-    return rc;
-}
-
-int del(unsigned index) {
-    int fd = open_dev();
-    if (fd < 0) return -1;
-    struct funroot_req req{};
-    req.index = index;
-    int rc = ioctl(fd, FUNROOT_DEL, &req);
-    close(fd);
-    return rc;
-}
-
-int set(unsigned index) {
-    int fd = open_dev();
-    if (fd < 0) return -1;
-    struct funroot_req req{};
-    req.index = index;
-    int rc = ioctl(fd, FUNROOT_SET, &req);
-    close(fd);
-    return rc;
-}
-
-int get(unsigned &index, std::string &path) {
-    int fd = open_dev();
-    if (fd < 0) return -1;
-    struct funroot_req req{};
-    int rc = ioctl(fd, FUNROOT_GET, &req);
-    close(fd);
-    if (rc == 0) {
-        index = req.index;
-        path = req.path;
-    }
-    return rc;
-}
-
-bool list(std::ostream &os) {
-    int fd = open_dev();
-    if (fd < 0) return false;
-    os << "index\tpath\n";
-    for (unsigned i = 0; i < FUNROOT_MAX_ROOTS; ++i) {
-        struct funroot_req req{};
-        req.index = i;
-        if (ioctl(fd, FUNROOT_PATH, &req) == 0)
-            os << i << "\t" << req.path << "\n";
-    }
-    close(fd);
-    return true;
-}
-
-} // namespace funroot_k
-
-bool kernel_enter(unsigned index, const std::string &cmd,
-                  const std::vector<std::string> &args,
-                  bool new_session, bool dns) {
-    if (!require_root()) return false;
-    if (!funroot_k::available()) {
-        std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
-        return false;
-    }
-    MultiRoot r(index);
-    std::string rp;
-    if (r.is_host()) {
-        rp = "/";
-    } else {
-        if (!r.init()) return false;
-        if (!r.mount_all(dns)) return false;
-        rp = r.status_path();
-    }
-    if (funroot_k::add(index, rp) != 0) {
-        std::cerr << "mroot: cannot register root " << index << " with funroot\n";
-        return false;
-    }
-    if (funroot_k::set(index) != 0) {
-        std::cerr << "mroot: funroot switch to root " << index << " failed\n";
-        return false;
-    }
-    if (chdir("/") != 0) {
-        std::cerr << "mroot: chdir(/): " << strerror(errno) << "\n";
-        return false;
-    }
-    return exec_prepared(cmd, args, new_session) == 0;
-}
-
-bool kernel_switch(unsigned index) {
-    if (!require_root()) return false;
-    if (!funroot_k::available()) {
-        std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
-        return false;
-    }
-    MultiRoot r(index);
-    std::string rp = r.is_host() ? "/" : r.status_path();
-    if (funroot_k::add(index, rp) != 0) {
-        std::cerr << "mroot: cannot register root " << index << " with funroot\n";
-        return false;
-    }
-    if (funroot_k::set(index) != 0) {
-        std::cerr << "mroot: funroot switch to root " << index << " failed\n";
-        return false;
-    }
-    std::cout << "mroot: switched this process's root to " << index
-              << " (" << rp << ")\n";
-    return true;
-}
-
-bool kernel_sync() {
-    if (!funroot_k::available()) {
-        std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
-        return false;
-    }
-    if (!bedrock_sync()) return false;
-    unsigned ok = 0;
-    for (unsigned i = ROOT_MIN; i <= ROOT_MAX; ++i) {
-        std::string p = i == 0 ? "/" : roots_dir() + "/" + std::to_string(i);
-        MediaConf c;
-        bool has = i == 0 || access(p.c_str(), F_OK) == 0 || load_media_conf(i, c);
-        if (!has) continue;
-        if (i != 0) {
-            MultiRoot r(i);
-            p = r.status_path();
+        int open_dev() {
+            return ::open(DEV, O_RDWR | O_CLOEXEC);
         }
-        if (funroot_k::add(i, p) == 0) {
-            ok++;
-            std::cout << "funroot: registered " << i << " -> " << p << "\n";
+
+        bool available() {
+            int fd = open_dev();
+            if (fd < 0) return false;
+            close(fd);
+            return true;
         }
+
+        int add(unsigned index, const std::string &path) {
+            int fd = open_dev();
+            if (fd < 0) return -1;
+            struct funroot_req req{};
+            req.index = index;
+            strncpy(req.path, path.c_str(), sizeof(req.path) - 1);
+            int rc = ioctl(fd, FUNROOT_ADD, &req);
+            if (rc != 0 && errno == EBUSY) rc = 0;
+            close(fd);
+            return rc;
+        }
+
+        int del(unsigned index) {
+            int fd = open_dev();
+            if (fd < 0) return -1;
+            struct funroot_req req{};
+            req.index = index;
+            int rc = ioctl(fd, FUNROOT_DEL, &req);
+            close(fd);
+            return rc;
+        }
+
+        int set(unsigned index) {
+            int fd = open_dev();
+            if (fd < 0) return -1;
+            struct funroot_req req{};
+            req.index = index;
+            int rc = ioctl(fd, FUNROOT_SET, &req);
+            close(fd);
+            return rc;
+        }
+
+        int get(unsigned &index, std::string &path) {
+            int fd = open_dev();
+            if (fd < 0) return -1;
+            struct funroot_req req{};
+            int rc = ioctl(fd, FUNROOT_GET, &req);
+            close(fd);
+            if (rc == 0) {
+                index = req.index;
+                path = req.path;
+            }
+            return rc;
+        }
+
+        bool list(std::ostream &os) {
+            int fd = open_dev();
+            if (fd < 0) return false;
+            os << "index\tpath\n";
+            for (unsigned i = 0; i < FUNROOT_MAX_ROOTS; ++i) {
+                struct funroot_req req{};
+                req.index = i;
+                if (ioctl(fd, FUNROOT_PATH, &req) == 0)
+                    os << i << "\t" << req.path << "\n";
+            }
+            close(fd);
+            return true;
+        }
+
+    } // namespace funroot_k
+
+    bool kernel_enter(unsigned index, const std::string &cmd,
+                      const std::vector<std::string> &args,
+                      bool new_session, bool dns) {
+        if (!require_root()) return false;
+        if (!funroot_k::available()) {
+            std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
+            return false;
+        }
+        MultiRoot r(index);
+        std::string rp;
+        if (r.is_host()) {
+            rp = "/";
+        } else {
+            if (!r.init()) return false;
+            if (!r.mount_all(dns)) return false;
+            rp = r.status_path();
+        }
+        if (funroot_k::add(index, rp) != 0) {
+            std::cerr << "mroot: cannot register root " << index << " with funroot\n";
+            return false;
+        }
+        if (funroot_k::set(index) != 0) {
+            std::cerr << "mroot: funroot switch to root " << index << " failed\n";
+            return false;
+        }
+        if (chdir("/") != 0) {
+            std::cerr << "mroot: chdir(/): " << strerror(errno) << "\n";
+            return false;
+        }
+        return exec_prepared(cmd, args, new_session) == 0;
     }
-    std::cout << "funroot: " << ok << " root(s) registered\n";
-    return true;
-}
+
+    bool kernel_switch(unsigned index) {
+        if (!require_root()) return false;
+        if (!funroot_k::available()) {
+            std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
+            return false;
+        }
+        MultiRoot r(index);
+        std::string rp = r.is_host() ? "/" : r.status_path();
+        if (funroot_k::add(index, rp) != 0) {
+            std::cerr << "mroot: cannot register root " << index << " with funroot\n";
+            return false;
+        }
+        if (funroot_k::set(index) != 0) {
+            std::cerr << "mroot: funroot switch to root " << index << " failed\n";
+            return false;
+        }
+        std::cout << "mroot: switched this process's root to " << index
+                  << " (" << rp << ")\n";
+        return true;
+    }
+
+    bool kernel_sync() {
+        if (!funroot_k::available()) {
+            std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
+            return false;
+        }
+        if (!bedrock_sync()) return false;
+        unsigned ok = 0;
+        for (unsigned i = ROOT_MIN; i <= ROOT_MAX; ++i) {
+            std::string p = i == 0 ? "/" : roots_dir() + "/" + std::to_string(i);
+            MediaConf c;
+            bool has = i == 0 || access(p.c_str(), F_OK) == 0 || load_media_conf(i, c);
+            if (!has) continue;
+            if (i != 0) {
+                MultiRoot r(i);
+                p = r.status_path();
+            }
+            if (funroot_k::add(i, p) == 0) {
+                ok++;
+                std::cout << "funroot: registered " << i << " -> " << p << "\n";
+            }
+        }
+        std::cout << "funroot: " << ok << " root(s) registered\n";
+        return true;
+    }
 #endif // __linux__
 
 bool list_roots() {
@@ -1346,49 +1338,47 @@ int main(int argc, char **argv) {
         if (optind < argc) cmd = argv[optind++];
         while (optind < argc) args.push_back(argv[optind++]);
         /*
-         * Kernel-first: when the funroot module is loaded, entering a root
-         * is a real kernel-enforced root switch rather than a chroot.
-         * Set MROOT_NO_KERNEL=1 (or just unload the module) to force the
-         * plain chroot path.
+         * kernel-first: use funroot if loaded, else plain chroot.
+         * MROOT_NO_KERNEL=1 forces chroot.
          */
         if (!getenv("MROOT_NO_KERNEL") && funroot_k::available())
             return kernel_enter(a, cmd, args, new_session, dns) ? 0 : 1;
         return r.enter(cmd, args, new_session, dns);
     }
 
-#if defined(__linux__) || defined(__LINUX__)
-    if (command == "kenter" || command == "kswitch") {
-        if (!need_index(a)) return 2;
-        if (command == "kswitch") return kernel_switch(a) ? 0 : 1;
-        std::string cmd = "/bin/sh";
-        std::vector<std::string> args;
-        if (optind < argc) cmd = argv[optind++];
-        while (optind < argc) args.push_back(argv[optind++]);
-        return kernel_enter(a, cmd, args, new_session, dns) ? 0 : 1;
-    }
-
-    if (command == "kget") {
-        unsigned idx;
-        std::string p;
-        if (funroot_k::get(idx, p) != 0) {
-            std::cerr << "mroot: funroot kernel module not available (/dev/funroot)\n";
-            return 1;
+    #if defined(__linux__) || defined(__LINUX__)
+        if (command == "kenter" || command == "kswitch") {
+            if (!need_index(a)) return 2;
+            if (command == "kswitch") return kernel_switch(a) ? 0 : 1;
+            std::string cmd = "/bin/sh";
+            std::vector<std::string> args;
+            if (optind < argc) cmd = argv[optind++];
+            while (optind < argc) args.push_back(argv[optind++]);
+            return kernel_enter(a, cmd, args, new_session, dns) ? 0 : 1;
         }
-        std::cout << "index: " << idx << "\n";
-        if (!p.empty()) std::cout << "path:  " << p << "\n";
-        return 0;
-    }
 
-    if (command == "klist") {
-        if (!funroot_k::available()) {
-            std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
-            return 1;
+        if (command == "kget") {
+            unsigned idx;
+            std::string p;
+            if (funroot_k::get(idx, p) != 0) {
+                std::cerr << "mroot: funroot kernel module not available (/dev/funroot)\n";
+                return 1;
+            }
+            std::cout << "index: " << idx << "\n";
+            if (!p.empty()) std::cout << "path:  " << p << "\n";
+            return 0;
         }
-        return funroot_k::list(std::cout) ? 0 : 1;
-    }
 
-    if (command == "ksync") return kernel_sync() ? 0 : 1;
-#endif
+        if (command == "klist") {
+            if (!funroot_k::available()) {
+                std::cerr << "mroot: funroot kernel module not loaded (/dev/funroot)\n";
+                return 1;
+            }
+            return funroot_k::list(std::cout) ? 0 : 1;
+        }
+
+        if (command == "ksync") return kernel_sync() ? 0 : 1;
+    #endif
 
     if (command == "remove") {
         if (!need_index(a)) return 2;

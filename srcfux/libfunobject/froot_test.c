@@ -1,7 +1,4 @@
-/*
- * froot_test.c - exercises the FunTux multiroot object model without
- * needing root or the funroot kernel module.
- */
+/* froot_test.c - exercise the funroot object model (no root needed). */
 
 #define _DEFAULT_SOURCE
 

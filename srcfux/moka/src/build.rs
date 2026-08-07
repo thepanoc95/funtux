@@ -1,17 +1,13 @@
-//! Build orchestration: chroot-aware compile + install, file manifest tracking.
-
 use crate::config::Config;
 use crate::pkg::Package;
 use crate::util::{ensure_dir, list_dir, rm_rf, run_phase, R};
 use std::path::{Path, PathBuf};
 
-/// Root that builds happen in. Currently chroot == root; kept as a seam so a
-/// true chroot can be dropped in later.
 pub struct BuildCtx<'a> {
     pub cfg: &'a Config,
     pub pkg: &'a Package,
     pub work: PathBuf,
-    pub image: PathBuf, // staging dir for DESTDIR
+    pub image: PathBuf,
     pub log: String,
 }
 
@@ -53,7 +49,6 @@ impl<'a> BuildCtx<'a> {
         ]
     }
 
-    /// Run a phase in the workdir with the base env set.
     fn phase(&mut self, name: &str) -> R<()> {
         let script = self.pkg.phases.get(name).cloned().unwrap_or_default();
         if script.trim().is_empty() {
@@ -65,7 +60,6 @@ impl<'a> BuildCtx<'a> {
         run_phase(name, &script, &env, &self.work)
     }
 
-    /// Perform a full build: fetch source -> prepare -> configure -> compile -> install.
     pub fn build(&mut self) -> R<()> {
         self.fetch_source()?;
         self.phase("src_prepare")?;
@@ -75,8 +69,6 @@ impl<'a> BuildCtx<'a> {
         Ok(())
     }
 
-    /// Populate $S. If the recipe declares a git `SRC_URI`, clone it there;
-    /// otherwise $S is left empty for `src_prepare` to fill.
     fn fetch_source(&self) -> R<()> {
         let sdir = self.work.join("S");
         match self.pkg.ebuild.get("SRC_URI") {
@@ -98,7 +90,6 @@ impl<'a> BuildCtx<'a> {
         }
     }
 
-    /// Copy staged files into the live root, returning installed relpaths.
     pub fn install_into_root(&self) -> R<Vec<String>> {
         let mut installed = Vec::new();
         copy_tree(&self.image, &self.cfg.root, &mut installed)?;

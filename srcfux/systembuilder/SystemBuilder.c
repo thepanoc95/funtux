@@ -1,9 +1,6 @@
 /*
  * SystemBuilder.c - FunTux System Builder (Motif).
- *
- * A front end for assembling a FunTux system inside an mroot root:
- * it lists the available moka recipes, and can build them into a chosen
- * root filesystem (FUNTUX_ROOT=<root> moka install <atom>).
+ * Lists moka recipes and builds them into an mroot root.
  */
 
 #define _DEFAULT_SOURCE

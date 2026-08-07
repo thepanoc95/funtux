@@ -1,14 +1,8 @@
-//! Pack a built (staged) package into a pacman-compatible binary archive
-//! (`.pkg.tar.zst`) so moka builds can be distributed and installed with
-//! pacman on machines that do not want to compile from source.
-
 use crate::config::Config;
 use crate::pkg::Package;
 use crate::util::{ensure_dir, rm_rf, sh_ok, sh_out, sq, write_file, R};
 use std::path::{Path, PathBuf};
 
-/// Produce `<name>-<ver>-1-<arch>.pkg.tar.zst` in `outdir` from a staged
-/// image (the build's `$DESTDIR`). Returns the path to the archive.
 pub fn pack(cfg: &Config, pkg: &Package, image: &Path, outdir: &Path) -> R<PathBuf> {
     ensure_dir(outdir)?;
     let arch = std::env::consts::ARCH;
@@ -18,7 +12,7 @@ pub fn pack(cfg: &Config, pkg: &Package, image: &Path, outdir: &Path) -> R<PathB
     rm_rf(&tmp)?;
     ensure_dir(&tmp)?;
 
-    // Payload: hardlink the staged image into the pack dir (no data copy).
+    // hardlink the staged image into the pack dir, no data copy
     sh_ok(&format!(
         "cp -al {}/. {}/",
         sq(&image.display().to_string()),
@@ -37,7 +31,6 @@ pub fn pack(cfg: &Config, pkg: &Package, image: &Path, outdir: &Path) -> R<PathB
     Ok(out)
 }
 
-/// Write a pacman `.PKGINFO` describing the package.
 fn write_pkginfo(pkg: &Package, dir: &Path, arch: &str) -> R<()> {
     let name = &pkg.atom.name;
     let ver = &pkg.atom.version;
@@ -70,7 +63,6 @@ fn write_pkginfo(pkg: &Package, dir: &Path, arch: &str) -> R<()> {
     write_file(&dir.join(".PKGINFO"), &info)
 }
 
-/// Reduce a dep atom string to a bare pacman package name.
 fn dep_name(dep: &str) -> String {
     let name = dep.rsplit('/').next().unwrap_or(dep);
     name.rsplit_once('-')
@@ -78,7 +70,6 @@ fn dep_name(dep: &str) -> String {
         .unwrap_or_else(|| name.to_string())
 }
 
-/// Generate a `.MTREE` manifest over the pack dir, exactly like makepkg does.
 fn gen_mtree(dir: &Path) -> R<()> {
     let list = sh_out(&format!(
         "find {d} -mindepth 1 -printf '%P\\n' | LC_ALL=C sort",
@@ -99,7 +90,6 @@ fn gen_mtree(dir: &Path) -> R<()> {
     ))
 }
 
-/// Sum the size of regular files under `dir` (installed size).
 fn installed_size(dir: &Path) -> u64 {
     let mut total = 0u64;
     if let Ok(entries) = std::fs::read_dir(dir) {

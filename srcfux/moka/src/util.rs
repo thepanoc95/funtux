@@ -1,16 +1,12 @@
-//! Small filesystem / process helpers. Pure std, no external crates.
-
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 pub type R<T> = Result<T, String>;
 
-/// Shell-quote a string (wrap in single quotes, escaping embedded quotes).
 pub fn sq(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
-/// Run a command through /bin/sh, streaming stdout/stderr. Returns exit code.
 pub fn sh_run(cmd: &str) -> R<i32> {
     Command::new("/bin/sh")
         .arg("-c")
@@ -20,7 +16,6 @@ pub fn sh_run(cmd: &str) -> R<i32> {
         .map_err(|e| format!("failed to run `{}`: {}", cmd, e))
 }
 
-/// Run a command through /bin/sh; error if it fails.
 pub fn sh_ok(cmd: &str) -> R<()> {
     let code = sh_run(cmd)?;
     if code == 0 {
@@ -30,7 +25,6 @@ pub fn sh_ok(cmd: &str) -> R<()> {
     }
 }
 
-/// Run a command through /bin/sh and capture its stdout (trimmed).
 pub fn sh_out(cmd: &str) -> R<String> {
     let out = Command::new("/bin/sh")
         .arg("-c")
@@ -102,7 +96,7 @@ pub fn basename(p: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Run a phase script: `cd work && ENV=... sh` with the script piped to stdin.
+// run a phase script: `cd work && ENV=... sh`, script piped to stdin
 pub fn run_phase(
     name: &str,
     script: &str,

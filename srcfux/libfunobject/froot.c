@@ -1,8 +1,5 @@
 /*
  * froot.c - FunTux multiroot tool built on the libfunobject object model.
- *
- * Demonstrates the multiroot philosophy as objects: every operation goes
- * through FunRoot / FunStratum / FunMount instances.
  */
 
 #define _DEFAULT_SOURCE

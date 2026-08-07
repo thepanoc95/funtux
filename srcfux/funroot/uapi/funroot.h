@@ -1,9 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * funroot - FunTux multi-root namespace switcher UAPI.
- *
- * Shared between the funroot kernel module and userland tools (mroot,
- * funroot). Index 0 is reserved for the host root ("/").
+ * funroot UAPI - shared between the kernel module and userland
+ * (mroot, funroot). index 0 = host root.
  */
 #ifndef _UAPI_FUNROOT_H
 #define _UAPI_FUNROOT_H
@@ -17,7 +15,7 @@
 
 struct funroot_req {
 	__u32 index;
-	__u32 flags;		/* reserved for now, must be 0 */
+	__u32 flags;		/* must be 0 */
 	char path[FUNROOT_PATH_MAX];
 };
 

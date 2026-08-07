@@ -2,33 +2,13 @@
 /*
  * funroot - FunTux multi-root namespace switcher.
  *
- * Gives each process a per-process "current root" among several registered
- * Linux root filesystems. A process switches which root it sees at "/" with
- * an ioctl on /dev/funroot; no exec or re-login is required, and the switch
- * is kernel-enforced (it cannot be escaped by path tricks short of full
- * privileged access). The old root's dentry is dropped from the process's
- * fs_struct, exactly like chroot() but switchable at runtime and across any
- * number of registered roots.
+ * Each process has a "current root" among several registered roots; an
+ * ioctl on /dev/funroot changes it, no re-exec or re-login needed. The
+ * switch is kernel-enforced, like chroot() but switchable at runtime.
+ * index 0 is the host root ("/"); the rest are $MROOT_ROOTS_DIR/<index>
+ * (or a Bedrock stratum under /bedrock/strata/<name>).
  *
- * Unlike a union/overlay approach only one root is live per process at a
- * time; the others stay pinned and ready to switch to. This is FunTux's
- * "multiroot" core: index 0 is the host root ("/"), the rest are the roots
- * under $MROOT_ROOTS_DIR (typically /var/roots/<index>). When running under
- * Bedrock Linux, roots may point at /bedrock/strata/<name> so switching a
- * process's root == switching its Bedrock stratum.
- *
- * Interface (see uapi/funroot.h):
- *   FUNROOT_ADD   - register a root (requires CAP_SYS_ADMIN)
- *   FUNROOT_DEL   - unregister a root (requires CAP_SYS_ADMIN)
- *   FUNROOT_SET   - switch the calling process's root (permission via params)
- *   FUNROOT_GET   - report the calling process's current root
- *   FUNROOT_PATH  - report the registered path for an index
- *   FUNROOT_COUNT - report how many roots are registered
- *
- * The registry holds a pinned struct path per root so that switching works
- * even after the calling process has already left the host root: new roots
- * are resolved once at ADD time, not re-resolved relative to the current
- * position (which would otherwise point into the wrong tree).
+ * Interface (see uapi/funroot.h): ADD, DEL, SET, GET, PATH, COUNT.
  */
 
 #include <linux/capability.h>
@@ -74,18 +54,18 @@ module_param(funroot_debug, bool, 0644);
 module_param(funroot_user_switch, bool, 0644);
 module_param(funroot_host_switch, bool, 0644);
 MODULE_PARM_DESC(funroot_debug,
-		 "enable verbose logging");
+		 "verbose logging");
 MODULE_PARM_DESC(funroot_user_switch,
 		 "allow unprivileged processes to switch their own root");
 MODULE_PARM_DESC(funroot_host_switch,
-		 "allow unprivileged processes to switch back to the host root (index 0)");
+		 "allow unprivileged processes to switch back to root 0");
 
 #define funroot_log(fmt, ...) \
 	pr_info("funroot: " fmt "\n", ##__VA_ARGS__)
 #define funroot_dbg(fmt, ...) \
 	do { if (funroot_debug) pr_info("funroot: " fmt "\n", ##__VA_ARGS__); } while (0)
 
-/* Snapshot the calling process's current root path under fs->lock. */
+/* caller's current root, ref'd under fs->lock */
 static struct path funroot_current_root(void)
 {
 	struct fs_struct *fs = current->fs;
@@ -180,7 +160,7 @@ static int funroot_del(const struct funroot_req __user *arg)
 	return err;
 }
 
-/* Requires funroot_lock held. */
+/* caller holds funroot_lock */
 static int funroot_set_locked(unsigned index)
 {
 	struct funroot_slot *s;
@@ -214,10 +194,9 @@ static int funroot_set_locked(unsigned index)
 	}
 
 	/*
-	 * set_fs_root()/set_fs_pwd() take their own reference on the new
-	 * path and drop the old one, so the caller's reference is released
-	 * here. This affects every thread sharing this fs_struct, matching
-	 * chroot() semantics.
+	 * set_fs_root()/set_fs_pwd() take their own ref and drop the old
+	 * root, so our ref is released here. Affects every thread sharing
+	 * this fs_struct, same as chroot().
 	 */
 	set_fs_root(fs, &newroot);
 	set_fs_pwd(fs, &newroot);
@@ -388,10 +367,8 @@ static struct miscdevice funroot_misc = {
 };
 
 /*
- * Pin the host root ("/") at load time so index 0 always refers to the
- * boot-time root, even for processes that have already switched into another
- * root. Without this, a later switch back to index 0 would resolve "/"
- * relative to whatever tree the caller currently sits in.
+ * Pin "/" at load so index 0 always means the boot-time root, even for
+ * processes that have already switched away.
  */
 static int __init funroot_register_host(void)
 {

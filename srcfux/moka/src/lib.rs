@@ -1,5 +1,3 @@
-//! moka library: recipe model, repo sync, build orchestration.
-
 pub mod build;
 pub mod config;
 pub mod pack;

@@ -1,4 +1,4 @@
-/* funrootctl - userland client for the funroot kernel module. */
+/* funrootctl - talk to the funroot kernel module. */
 
 #define _GNU_SOURCE
 

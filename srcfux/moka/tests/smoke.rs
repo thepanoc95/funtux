@@ -11,7 +11,7 @@ fn make_config(label: &str) -> Config {
     std::fs::create_dir_all(&tmp).unwrap();
     let cfg = Config::from_root(&tmp);
 
-    // Create a hello package: app-misc/hello-1.0
+    // hello package: app-misc/hello-1.0
     let pkgdir = cfg.repo_dir.join("app-misc").join("hello-1.0");
     std::fs::create_dir_all(&pkgdir).unwrap();
     std::fs::write(
@@ -64,6 +64,5 @@ fn builds_and_installs_package() {
     let hello = cfg.root.join("usr/bin/hello");
     assert!(hello.is_file(), "expected {} to exist", hello.display());
 
-    // Cleanup
     let _ = std::fs::remove_dir_all(&cfg.root);
 }

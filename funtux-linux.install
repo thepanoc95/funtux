@@ -1,0 +1,13 @@
+#!/bin/sh
+# funtux-linux.install
+# Removes conflicting /etc files from the base filesystem package
+# so funtux can install its own custom versions.
+
+pre_install() {
+    for f in \
+        fstab gettytab group hostname hosts issue ld.so.conf locale.sh \
+        motd os-release passwd profile shells sysctl sysusers tmpfiles
+    do
+        rm -f "${f}"
+    done
+}
