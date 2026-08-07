@@ -78,3 +78,5 @@ build() {
 	find "${pkgdir}/usr/src/funroot" -type d -exec chmod 755 {} \;
 	find "${pkgdir}/usr/src/funroot" -type f -exec chmod 644 {} \;
 }
+
+# bpt-sig-v1:RUQ8vOHr9KhTTzzqPl6LVphYq930+gCElzYQfJMjRwRGrX8trQlOfAQDdLIbIiT+F81hM+arSlh/kgSPkBHr3SQ/uYEabqj+bgA
