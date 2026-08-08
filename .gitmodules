@@ -1,0 +1,15 @@
+[submodule "srcfux/bin/rc"]
+	path = srcfux/bin/rc
+	url = https://github.com/rakitzis/rc
+[submodule "srcfux/lib/minlibc"]
+	path = srcfux/lib/minlibc
+	url = https://github.com/GaloisInc/minlibc.git
+[submodule "srcfux/bin/shinobi"]
+	path = srcfux/bin/shinobi
+	url = https://codeberg.org/derivelinux/shinobi
+[submodule "srcfux/lib/situation"]
+	path = srcfux/lib/situation
+	url = https://codeberg.org/derivelinux/situation
+[submodule "srcfux/lib/musl"]
+	path = srcfux/lib/musl
+	url = https://github.com/kraj/musl
