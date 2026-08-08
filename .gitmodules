@@ -13,3 +13,24 @@
 [submodule "srcfux/lib/musl"]
 	path = srcfux/lib/musl
 	url = https://github.com/kraj/musl
+[submodule "srcfux/coreutils"]
+	path = srcfux/coreutils
+	url = https://github.com/uutils/coreutils
+[submodule "srcfux/packages/util-linux"]
+	path = srcfux/packages/util-linux
+	url = https://github.com/uutils/util-linux.git
+[submodule "srcfux/packages/bsdutils"]
+	path = srcfux/packages/bsdutils
+	url = https://github.com/uutils/bsdutils
+[submodule "srcfux/packages/shadow"]
+	path = srcfux/packages/shadow
+	url = https://github.com/uutils/shadow
+[submodule "srcfux/packages/grep"]
+	path = srcfux/packages/grep
+	url = https://github.com/uutils/grep
+[submodule "srcfux/packages/awk"]
+	path = srcfux/packages/awk
+	url = https://github.com/uutils/awk
+[submodule "srcfux/packages/tar"]
+	path = srcfux/packages/tar
+	url = https://github.com/uutils/tar
