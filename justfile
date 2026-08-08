@@ -69,7 +69,7 @@ pkg-bedrock:
 
 # Fetch build dependencies (delegates to fetchdeps.sh)
 deps:
-    @./fetchdeps.sh
+    @./scripts/fetchdeps.sh
 
 # Show all available recipes
 default:
