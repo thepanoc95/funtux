@@ -1,5 +1,3 @@
-/* funrootctl - talk to the funroot kernel module. */
-
 #define _GNU_SOURCE
 
 #include <errno.h>

@@ -1,7 +1,3 @@
-/*
- * froot.c - FunTux multiroot tool built on the libfunobject object model.
- */
-
 #define _DEFAULT_SOURCE
 
 #include "funroot.h"

@@ -1,6 +1,7 @@
 #define _BSD_SOURCE
 #define _DEFAULT_SOURCE
-#define _MROOT_VERSION "0.3.0"
+#define _FUNTUX_VERSION version
+#define _MROOT_VERSION _FUNTUX_VERSION
 
 #include <algorithm>
 #include <cstdlib>
@@ -18,6 +19,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <vector>
+#include "../../version.h"
 
 #if defined(__linux__) || defined(__LINUX__)
     #include <sys/ioctl.h>

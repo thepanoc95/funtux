@@ -1,5 +1,4 @@
 #!/bin/bash
 
-welcome() {
-    # dialog 
-}
+TITLE="Install FunTux Linux"
+WINDOW=$(dialog --title Welcome --backtitle $TITLE)

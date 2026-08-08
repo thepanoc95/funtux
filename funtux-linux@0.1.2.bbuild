@@ -1,7 +1,7 @@
 #!/bedrock/cross/bin/sh
 
 pkgname="funtux-linux"
-pkgver="0.1.0"
+pkgver="0.1.2"
 pkgdesc="FunTux Linux multiroot tooling stratum (package-manager-less multiroot Linux)"
 homepage="N/A"
 license="GPL-2.0-only"

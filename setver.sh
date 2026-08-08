@@ -2,13 +2,16 @@
 
 FUNTUX_MAJOR="0"
 FUNTUX_MINOR="1"
-FUNTUX_MINORMINOR="0"
+FUNTUX_MINORMINOR="2"
 export FUNTUX_VERSION="$FUNTUX_MAJOR.$FUNTUX_MINOR.$FUNTUX_MINORMINOR"
 
 BBUILD="funtux-linux@$FUNTUX_VERSION.bbuild"
 
-# Set a new version across the version-tracking files.  Usage:
-#   ./setver.sh 0.2.0
+if ! command -v sed 2>&1 /dev/null; then
+    echo "Huh, looks like I couldn't find sed on your system, I can't continue this operation without it."
+    exit 1
+fi
+
 fun_ver_update() {
     old_ver="$FUNTUX_VERSION"
     new_ver="$1"
@@ -48,6 +51,10 @@ fun_ver_update() {
     # Bump the arch PKGBUILD version.
     if [ -f PKGBUILD ]; then
         sed -i "s/^pkgver=$old_ver$/pkgver=$new_ver/" PKGBUILD
+    fi
+
+    if [ -f version.h ]; then
+        sed -i "s/^#define version \"$old_ver\"/#define version \"$new_ver\"/" version.h
     fi
 
     echo "bumped $old_ver -> $new_ver ($new_file, $new_ebuild, PKGBUILD)"

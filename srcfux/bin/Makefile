@@ -15,6 +15,12 @@ msubsys: msubsys.c | $(BUILDDIR)
 funroot: funrootctl.c | $(BUILDDIR)
 	$(CC) $(CFLAGS) -I$(FUNROOT_UAPI) $(LDFLAGS) $< $(LDLIBS) -o $(BUILDDIR)/$@
 
+rc: $(BUILDDIR)
+	@make -C rc
+
+shinobi: $(BUILDDIR)
+	ninja
+
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)
 

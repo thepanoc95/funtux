@@ -1,15 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/*
- * funroot - FunTux multi-root namespace switcher.
- *
- * Each process has a "current root" among several registered roots; an
- * ioctl on /dev/funroot changes it, no re-exec or re-login needed. The
- * switch is kernel-enforced, like chroot() but switchable at runtime.
- * index 0 is the host root ("/"); the rest are $MROOT_ROOTS_DIR/<index>
- * (or a Bedrock stratum under /bedrock/strata/<name>).
- *
- * Interface (see uapi/funroot.h): ADD, DEL, SET, GET, PATH, COUNT.
- */
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#include "../../version.h"
+#define _FUNTUX_VERSION version
+#define _FUNROOT_VERSION _FUNTUX_VERSION
 
 #include <linux/capability.h>
 #include <linux/cred.h>
