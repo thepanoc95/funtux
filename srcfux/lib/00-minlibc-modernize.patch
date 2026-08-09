@@ -1,0 +1,12 @@
+diff --git a/__stack_chk_fail.c b/__stack_chk_fail.c
+index ebced29..ee3d9b3 100644
+--- a/__stack_chk_fail.c
++++ b/__stack_chk_fail.c
+@@ -5,6 +5,7 @@
+  * terms and conditions.
+  */
+ #include <stdio.h>
++#include <stdlib.h>
+ 
+ void __attribute__((noreturn)) __stack_chk_fail(void)
+ {
