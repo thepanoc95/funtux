@@ -1,5 +1,7 @@
 # libsys
 
+@include <Stack>
+
 @class LibSys {
 
 }
