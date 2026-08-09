@@ -26,7 +26,7 @@
     #include <sys/mount.h>
     #include <sys/syscall.h>
     #include <sched.h>
-    #include "funroot.h"
+    #include <funroot.h>
 #endif
 
 namespace mroot {

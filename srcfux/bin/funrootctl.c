@@ -1,4 +1,4 @@
-#define _GNU_SOURCE
+#define _BSD_SOURCE
 
 #include <errno.h>
 #include <fcntl.h>
@@ -7,8 +7,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
-
-#include "funroot.h"
+#include <funroot.h>
 
 #define FUNROOT_VERSION "0.1.0"
 #define FUNROOT_DEV "/dev/funroot"

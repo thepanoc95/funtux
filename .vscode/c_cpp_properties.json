@@ -1,0 +1,28 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "srcfux/funroot/uapi/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        },
+        {
+            "name": "FunTux",
+            "includePath": [
+                "build/stage3/usr/include/**"
+            ],
+            "defines": [],
+            "compilerPath": "build/stage3/usr/bin/musl-gcc",
+            "cStandard": "c99",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x86" // yeah this shi is 32-bit optimized too - milo
+        }
+    ],
+    "version": 4
+}

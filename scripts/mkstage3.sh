@@ -19,6 +19,6 @@ else
     buildstage3
     STATUS=$?
     if [ STATUS -eq 0 ]; then
-        source rmpacman.sh
+        ./rmpacman.sh $STAGE3
     fi
 fi
