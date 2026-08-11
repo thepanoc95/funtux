@@ -34,3 +34,6 @@
 [submodule "srcfuc/packages/brush"]
  path = srcfux/packages/brush
  url = https://github.com/reubeno/brush.git
+[submodule "kport"]
+ path = kport
+ url = https://codeberg.org/thepanoc95/funtux-ports.git
