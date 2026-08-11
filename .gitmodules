@@ -31,9 +31,9 @@
 [submodule "srcfux/packages/dash"]
 	path = srcfux/packages/dash
 	url = https://git.kernel.org/pub/scm/utils/dash/dash.git
-[submodule "srcfuc/packages/brush"]
- path = srcfux/packages/brush
- url = https://github.com/reubeno/brush.git
-[submodule "kport"]
- path = kport
- url = https://codeberg.org/thepanoc95/funtux-ports.git
+[submodule "srcfux/packages/brush"]
+	path = srcfux/packages/brush
+	url = https://github.com/reubeno/brush.git
+[submodule "kports"]
+	path = kports
+	url = https://codeberg.org/thepanoc95/funtux-ports.git
