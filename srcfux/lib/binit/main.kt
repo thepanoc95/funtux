@@ -29,14 +29,7 @@ val startupProcesses = listOf<Process> (
 // alr -- bsu
 // did it - milo
 fun SysReboot(arguments: Array<String>) {
-    val magic = 0xfee1dead
-    val magic2 = 0x28121969
-    val cmd = 0x1234567 // LINUX_REBOOT_CMD_RESTART
-
-    val result = syscall(SYS_reboot, magic, magic2, cmd, null)
-    if (result == -1) {
-        perror("BUDDY, SOMETHING IS NOT RIGHT, HIT CTRL+ALT+DELETE TO FORCE ME REBOOT!")
-    }
+    
 }
 
 fun main(verbose: Boolean = true) {
@@ -59,7 +52,14 @@ object SysControl {
     @RequiresAuthority(Authority.ROOT)
     fun reboot() {
         // uhhh do the stuff that makes the device reboot n shi
-        SysReboot()
+        val magic = 0xfee1dead
+        val _magic = 0x28121969
+        val cmd = 0x1234567 // LINUX_REBOOT_CMD_RESTART
+
+        val result = syscall(SYS_reboot, magic, _magic, cmd, null)
+        if (result == -1) {
+            perror("BUDDY, SOMETHING IS NOT RIGHT, HIT CTRL+ALT+DELETE TO FORCE ME REBOOT!")
+        }
     }
 
     fun wakeGetty() {

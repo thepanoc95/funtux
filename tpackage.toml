@@ -1,0 +1,62 @@
+[devenv]
+description="Funtux development environment"
+
+[pkgs]
+packages = [
+    "gcc",
+    "make", # gnu-make
+    "rust",
+    "arch-install-scripts",
+    "isoburn",
+    "tar",
+    "xz"
+]
+
+arch.packages = [
+    "base-devel"
+]
+
+[pkgs.conf]
+usepkgman = "pacman"
+
+[conf]
+hosts = ["arm64-linux", "x86_64-linux"]
+
+[conf.build]
+PATH = "build/stage3/bin"
+
+[conf.shell]
+PS1 = "(tpkg-dev) $PS1"
+
+[targets.mksysbase]
+cmd = """
+    #!/bin/bash
+    . /lib/tpkg/libtpkg
+
+    if ! command -v makepkg 2>&1 /dev/null; then
+        echo "makepkg not found, please install the 'arch-install-scripts' package"
+        exit 1
+    fi
+
+    makepkg -f 
+    mkdir -p result
+    ls -l *.zst | grep funtux-linux-* | mv % stage3-$(date)-$FUNTUX_VER.tar.xz
+    just clean
+"""
+
+[targets.mkiso]
+cmd = """
+    #!/bin/bash
+    . /lib/tpkg/libtpkg
+
+    makepkg -f
+    ls -l *.zst | grep funtux-linux-* | mv stage3.pkg.tar.zst
+    mkdir -p build/iso
+    pacman -N -U -K build/iso ./stage3.pkg.tar.zst
+    pacman -N -K build/iso linux linux-firmware
+    pacman -N -K build/iso base-devel
+    cd $(pwd)/tpkg && makepkg -si && mv tpkg-*.zst tpkg.pkg.tar.zst && mv tpkg.pkg.tar.zst ../ 
+    pacman -N -K -U build/iso ./tpkg.pkg.tar.zst
+    pacman -N -K build/iso grub
+    
+""" 

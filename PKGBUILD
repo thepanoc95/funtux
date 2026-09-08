@@ -4,7 +4,7 @@
 pkgname=funtux-linux
 pkgver=0.1.0
 pkgrel=1
-pkgdesc="FunTux Linux base system (Rust coreutils, base tools, funtux utilities)"
+pkgdesc="FunTux Linux base system"
 arch=(any)
 url=""
 license=('GPL-2.0-only')
@@ -28,7 +28,7 @@ backup=(
 )
 install=funtux-linux.install
 # Choose libc: FUNTUX_LIBC=musl (default) or FUNTUX_LIBC=minlibc
-depends=('bash' 'git' 'wget')
+depends=()
 makedepends=('gcc' 'make' 'git' 'rust' 'cargo' 'pkgconf' 'zlib')
 source=()
 sha256sums=()
@@ -80,7 +80,7 @@ build() {
     _pkg_CXXFLAGS="${CXXFLAGS}"
     unset CFLAGS CXXFLAGS
 
-    msg "Building coreutils (Rust) with ${libc}"
+    msg "Building coreutils"
     if [ "${libc}" = "musl" ]; then
         export RUSTFLAGS="-C link-arg=-s -C link-arg=-Wl,--gc-sections"
         export CC_x86_64_unknown_linux_musl=musl-gcc
@@ -102,8 +102,15 @@ build() {
     for pkg in awk bsdutils grep shadow tar util-linux; do
         if [ -f "srcfux/packages/${pkg}/Cargo.toml" ]; then
             msg "Building ${pkg} (Rust)"
-            cargo build --release --target x86_64-unknown-linux-musl --manifest-path "srcfux/packages/${pkg}/Cargo.toml" \
-                || return 1
+            if [ "${pkg}" = "util-linux" ]; then
+                cargo build --release --target x86_64-unknown-linux-musl --manifest-path "srcfux/packages/${pkg}/Cargo.toml" \
+                    --no-default-features \
+                    --features "blockdev,cal,chcpu,ctrlaltdel,dmesg,fsfreeze,hexdump,last,lscpu,lsmem,mcookie,mesg,mountpoint,nologin,renice,rev,setpgid,setsid,uuidgen" \
+                    || return 1
+            else
+                cargo build --release --target x86_64-unknown-linux-musl --manifest-path "srcfux/packages/${pkg}/Cargo.toml" \
+                    || return 1
+            fi
         fi
     done
     
@@ -111,7 +118,7 @@ build() {
     cargo build --release --target x86_64-unknown-linux-musl --manifest-path srcfux/wfetch/Cargo.toml \
         || return 1
 
-    msg "Building funtux C/C++ tools"
+    msg "Building funtux-utils"
     export CFLAGS="${_pkg_CFLAGS}" CXXFLAGS="${_pkg_CXXFLAGS}"
     make -C srcfux/bin clean >/dev/null 2>&1 || true
     make -C srcfux/bin || return 1
@@ -119,6 +126,12 @@ build() {
     make -C srcfux/mroot || return 1
     make -C srcfux/libfunobject clean >/dev/null 2>&1 || true
     make -C srcfux/libfunobject || return 1
+
+    msg "Building musl"
+    ( cd srcfux/lib/musl && CC=gcc ./configure --prefix=/usr --syslibdir=/lib && make -j$(nproc) ) || return 1
+
+    msg "Building dash"
+    ( cd srcfux/packages/dash && CC=musl-gcc ./configure --prefix=/usr && make -j$(nproc) ) || return 1
 }
 
 package() {
@@ -150,12 +163,11 @@ package() {
         target_dir="x86_64-unknown-linux-gnu"
     fi
     
-    install -d "${pkgdir}/usr/bin/coreutils"
-    for bin in srcfux/coreutils/target/${target_dir}/release/*; do
-        if [ -x "$bin" ] && [ -f "$bin" ]; then
-            basename=$(basename "$bin")
-            install -m 755 "$bin" "${pkgdir}/usr/bin/$basename"
-        fi
+    install -d "${pkgdir}/usr/bin"
+    install -m 755 "srcfux/coreutils/target/${target_dir}/release/coreutils" "${pkgdir}/usr/bin/coreutils"
+    local coreutils_cmds="ls cat rm cp mv ln mkdir rmdir pwd echo printf head tail env printenv date dd df du touch chmod install sort uniq split tee tr yes true false seq wc sum whoami nproc"
+    for cmd in ${coreutils_cmds}; do
+        ln -sf coreutils "${pkgdir}/usr/bin/${cmd}"
     done
 
     for pkg in awk bsdutils grep shadow tar util-linux; do
@@ -171,6 +183,16 @@ package() {
     done
 
     install -m 755 srcfux/wfetch/target/${target_dir}/release/wfetch "${pkgdir}/usr/bin/wfetch"
+
+    msg "Installing musl"
+    make -C srcfux/lib/musl install DESTDIR="${pkgdir}"
+
+    install -d "${pkgdir}/bin" "${pkgdir}/usr/bin"
+    install -m 755 srcfux/packages/dash/src/dash "${pkgdir}/bin/dash"
+    ln -sf dash "${pkgdir}/bin/bash"
+    ln -sf dash "${pkgdir}/bin/sh"
+    ln -sf ../bin/dash "${pkgdir}/usr/bin/bash"
+    ln -sf ../bin/dash "${pkgdir}/usr/bin/sh"
 
     install -m 644 filesfux/* "${pkgdir}/etc/" 2>/dev/null || :
     install -m 644 srcfux/etc/* "${pkgdir}/etc/" 2>/dev/null || :

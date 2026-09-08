@@ -12,10 +12,16 @@ PREFIX   ?= /usr/local
 BINDIR    = $(PREFIX)/sbin
 BUILDDIR := $(CURDIR)/../../build/mroot
 
+SRCS = main.cc utils.cc media.cc kernel.cc roots.cc
+OBJS = $(patsubst %.cc,$(BUILDDIR)/%.o,$(SRCS))
+
 all: $(BUILDDIR) mroot
 
-mroot: main.cc | $(BUILDDIR)
-	$(CXX) $(CXXFLAGS) -I$(FUNROOT_UAPI) $(LDFLAGS) $< $(LDLIBS) -o $(BUILDDIR)/$@
+mroot: $(OBJS) | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -I$(FUNROOT_UAPI) $(LDFLAGS) $(OBJS) $(LDLIBS) -o $(BUILDDIR)/$@
+
+$(BUILDDIR)/%.o: %.cc | $(BUILDDIR)
+	$(CXX) $(CXXFLAGS) -I$(FUNROOT_UAPI) -c $< -o $@
 
 $(BUILDDIR):
 	mkdir -p $(BUILDDIR)

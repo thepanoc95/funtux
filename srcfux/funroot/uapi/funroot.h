@@ -6,8 +6,10 @@
 #ifndef _UAPI_FUNROOT_H
 #define _UAPI_FUNROOT_H
 
-#include <linux/ioctl.h>
-#include <linux/types.h>
+#include <stdint.h>
+#include <sys/ioctl.h>
+
+typedef uint32_t __u32;
 
 #define FUNROOT_MAGIC		0xf0
 #define FUNROOT_PATH_MAX	4096

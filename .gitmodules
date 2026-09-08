@@ -28,3 +28,6 @@
 [submodule "srcfux/packages/tar"]
 	path = srcfux/packages/tar
 	url = https://github.com/uutils/tar
+[submodule "srcfux/packages/dash"]
+	path = srcfux/packages/dash
+	url = https://git.kernel.org/pub/scm/utils/dash/dash.git

@@ -1,4 +1,4 @@
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 
 #include <errno.h>
 #include <fcntl.h>
@@ -58,7 +58,7 @@ static int cmd_add(const char *index_str, const char *path)
 	fd = dev_open();
 	if (fd < 0)
 		return 1;
-	rc = ioctl(fd, FUNROOT_ADD, &req);
+	rc = ioctl(fd, _IOW('r', 0, struct funroot_req), &req);
 	if (rc < 0 && errno != EBUSY) {
 		fprintf(stderr, "funroot: add root %d: %s\n", index,
 			strerror(errno));
@@ -85,7 +85,7 @@ static int cmd_del(const char *index_str)
 	fd = dev_open();
 	if (fd < 0)
 		return 1;
-	if (ioctl(fd, FUNROOT_DEL, &req) < 0) {
+	if (ioctl(fd, _IOW('r', 1, struct funroot_req), &req) < 0) {
 		fprintf(stderr, "funroot: del root %d: %s\n", index,
 			strerror(errno));
 		close(fd);

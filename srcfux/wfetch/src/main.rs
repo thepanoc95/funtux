@@ -6,14 +6,21 @@ use std::process::{Command, ExitCode};
 
 use clap::{Parser, Subcommand};
 use reqwest::blocking::Client;
+use serde::Deserialize;
 
-/// wfetch - Funtux's lightweight source-based package manager
+mod pkgs;
+mod aur;
+
+
 #[derive(Parser)]
-#[clap(name = "wfetch", version, about = "source-based source manager")]
+#[clap(name = "wfetch", version, about = "Pacman-compatible package manager for FunTux!")]
 struct Cli {
     #[clap(short, long, help = "Run non-interactively, assume yes to prompts")]
     yes: bool,
-    
+
+    #[clap(short, long, help = "Path to a TOML config file to use instead of the default")]
+    config: Option<PathBuf>,
+
     #[clap(subcommand)]
     command: Commands,
 }
@@ -22,41 +29,34 @@ struct Cli {
 enum Commands {
     Add {
         url: String,
+
+        #[clap(long, help = "Install from the AUR (implies makepkg-style build)")]
+        aur: bool,
     },
-    
-    /// Remove an installed package
+
     Remove {
-        /// Name of the package to remove
         package: String,
     },
-    
-    /// List installed packages
+
     List,
-    
-    /// Display package metadata
+
     Info {
-        /// Name of the package
         package: String,
     },
-    
-    /// Update a package (or all if no package specified)
+
     Update {
-        /// Name of the package to update (optional)
         package: Option<String>,
     },
-    
-    /// Remove cached sources and temporary build directories
+
     Clean,
-    
-    /// Search for packages (optional, not implemented initially)
+
     Search {
-        /// Search term
         term: String,
     },
 }
 
-// Configuration structure
-struct Config {
+#[derive(Deserialize, Default)]
+pub(crate) struct Config {
     cache_dir: PathBuf,
     src_dir: PathBuf,
     pkgs_dir: PathBuf,
@@ -66,10 +66,21 @@ struct Config {
     prefix: String,
 }
 
+#[derive(Deserialize)]
+struct ConfigToml {
+    cache: Option<PathBuf>,
+    src: Option<PathBuf>,
+    pkgs: Option<PathBuf>,
+    db: Option<PathBuf>,
+    build: Option<PathBuf>,
+    tmp: Option<PathBuf>,
+    prefix: Option<String>,
+}
+
 impl Config {
     fn default() -> Self {
         let root = PathBuf::from("/etc/wfetch");
-        
+
         Self {
             cache_dir: root.join("cache"),
             src_dir: root.join("cache").join("src"),
@@ -80,47 +91,67 @@ impl Config {
             prefix: "/usr".to_string(),
         }
     }
-    
-    fn load() -> Self {
-        // Try to load from /etc/wfetch/config, fall back to defaults
-        let config_path = Path::new("/etc/wfetch/config");
+
+    fn load(config_path: Option<&Path>) -> Self {
         let mut config = Config::default();
-        
-        if let Ok(contents) = fs::read_to_string(config_path) {
-            for line in contents.lines() {
-                if line.starts_with('#') || line.trim().is_empty() {
-                    continue;
-                }
-                
-                if let Some((key, value)) = line.split_once('=') {
-                    let key = key.trim();
-                    let value = value.trim();
-                    
-                    match key {
-                        "cache" => {
-                            let cache = PathBuf::from(value);
-                            config.cache_dir = cache.clone();
-                            config.src_dir = cache.join("src");
-                            config.pkgs_dir = cache.join("pkgs");
-                        },
-                        "db" => {
-                            config.db_dir = PathBuf::from(value);
-                        },
-                        "build" => {
-                            let build = PathBuf::from(value);
-                            config.build_dir = build.clone();
-                            config.tmp_dir = build;
-                        },
-                        "prefix" => {
-                            config.prefix = value.to_string();
-                        },
-                        _ => {}
+
+        let paths_to_try: Vec<PathBuf> = config_path
+            .map(|p| vec![p.to_path_buf()])
+            .or_else(|| {
+                std::env::var_os("WFETCH_CONFIG")
+                    .map(|p| vec![PathBuf::from(p)])
+            })
+            .unwrap_or_else(|| {
+                vec![
+                    PathBuf::from("/etc/wfetch/config.toml"),
+                    dirs::home_dir()
+                        .map(|h| h.join(".config/wfetch/config.toml"))
+                        .unwrap_or_else(|| PathBuf::from(".config/wfetch/config.toml")),
+                ]
+            });
+
+        for path in &paths_to_try {
+            if path.exists() {
+                if let Ok(contents) = fs::read_to_string(path) {
+                    match toml::from_str::<ConfigToml>(&contents) {
+                        Ok(toml_cfg) => {
+                            if let Some(v) = toml_cfg.cache {
+                                config.cache_dir = v.clone();
+                                config.src_dir = v.join("src");
+                                config.pkgs_dir = v.join("pkgs");
+                            }
+                            if let Some(v) = toml_cfg.src {
+                                config.src_dir = v;
+                            }
+                            if let Some(v) = toml_cfg.pkgs {
+                                config.pkgs_dir = v;
+                            }
+                            if let Some(v) = toml_cfg.db {
+                                config.db_dir = v;
+                            }
+                            if let Some(v) = toml_cfg.build {
+                                config.build_dir = v;
+                            }
+                            if let Some(v) = toml_cfg.tmp {
+                                config.tmp_dir = v;
+                            }
+                            if let Some(v) = toml_cfg.prefix {
+                                config.prefix = v;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "warning: failed to parse config file {}: {}",
+                                path.display(),
+                                e
+                            );
+                        }
                     }
+                    break;
                 }
             }
         }
-        
-        // Ensure all directories exist
+
         for dir in &[
             &config.cache_dir,
             &config.src_dir,
@@ -131,14 +162,17 @@ impl Config {
         ] {
             fs::create_dir_all(dir).ok();
         }
-        
+
         config
+    }
+
+    fn load_with_cli_path(config_path: Option<&PathBuf>) -> Self {
+        Config::load(config_path.map(|p| p.as_path()))
     }
 }
 
-// Package metadata structure
 #[derive(Debug, Clone, Default)]
-struct PackageMetadata {
+pub(crate) struct PackageMetadata {
     name: String,
     version: String,
     source: String,
@@ -152,9 +186,9 @@ impl PackageMetadata {
     fn load_from_dir(dir: &Path) -> Option<Self> {
         let meta_path = dir.join("metadata");
         let contents = fs::read_to_string(&meta_path).ok()?;
-        
+
         let mut metadata = PackageMetadata::default();
-        
+
         for line in contents.lines() {
             if let Some((key, value)) = line.split_once('=') {
                 match key.trim() {
@@ -173,31 +207,30 @@ impl PackageMetadata {
                 }
             }
         }
-        
+
         Some(metadata)
     }
-    
+
     fn save_to_dir(&self, dir: &Path) -> io::Result<()> {
         fs::create_dir_all(dir)?;
-        
+
         let mut contents = String::new();
         contents.push_str(&format!("name={}\n", self.name));
         contents.push_str(&format!("version={}\n", self.version));
         contents.push_str(&format!("source={}\n", self.source));
         contents.push_str(&format!("architecture={}\n", self.architecture));
         contents.push_str(&format!("libc={}\n", self.libc));
-        
+
         if !self.depends.is_empty() {
             contents.push_str(&format!("depends={}\n", self.depends.join(" ")));
         }
-        
+
         fs::write(dir.join("metadata"), contents)
     }
 }
 
-// Exit codes as defined in spec
 #[allow(dead_code)]
-enum ExitCode_ {
+pub(crate) enum ExitCode_ {
     Success = 0,
     GeneralError = 1,
     InvalidArgs = 2,
@@ -218,11 +251,15 @@ impl ExitCode_ {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let config = Config::load();
-    
+    let config = Config::load_with_cli_path(cli.config.as_ref());
+
     let result = match &cli.command {
-        Commands::Add { url } => {
-            add_package(&config, url.as_str(), cli.yes)
+        Commands::Add { url, aur } => {
+            if *aur {
+                aur::add_package_aur(&config, url.as_str(), cli.yes)
+            } else {
+                add_package(&config, url.as_str(), cli.yes)
+            }
         },
         Commands::Remove { package } => {
             remove_package(&config, package.as_str())
@@ -244,12 +281,11 @@ fn main() -> ExitCode {
             ExitCode_::GeneralError.exit_code()
         },
     };
-    
+
     result
 }
 
 fn add_package(config: &Config, url: &str, yes: bool) -> ExitCode {
-    // Security warning as per spec
     if !yes {
         print_warning(url);
         match get_user_confirmation() {
@@ -260,14 +296,12 @@ fn add_package(config: &Config, url: &str, yes: bool) -> ExitCode {
             }
         }
     }
-    
-    // Validate URL
+
     if !is_valid_url(url) {
         eprintln!("error: invalid URL: {}", url);
         return ExitCode_::InvalidArgs.exit_code();
     }
-    
-    // Determine URL type and fetch
+
     let (_pkg_name, src_dir) = match fetch_source(&config, url) {
         Ok(result) => result,
         Err(e) => {
@@ -275,15 +309,13 @@ fn add_package(config: &Config, url: &str, yes: bool) -> ExitCode {
             return ExitCode_::DownloadFailure.exit_code();
         }
     };
-    
-    // Locate wbuild.sh
+
     let wbuild_path = src_dir.join("wbuild.sh");
     if !wbuild_path.exists() {
         eprintln!("error: wbuild.sh not found in package source");
         return ExitCode_::BuildFailure.exit_code();
     }
-    
-    // Parse package metadata from wbuild.sh
+
     let metadata = match parse_wbuild_metadata(&wbuild_path) {
         Ok(meta) => meta,
         Err(e) => {
@@ -291,67 +323,55 @@ fn add_package(config: &Config, url: &str, yes: bool) -> ExitCode {
             return ExitCode_::BuildFailure.exit_code();
         }
     };
-    
-    // Verify checksums if provided
+
     if !metadata.sha256sums.is_empty() {
         if let Err(e) = verify_checksums(&src_dir, &metadata.sha256sums) {
             eprintln!("error: checksum verification failed: {}", e);
             return ExitCode_::ChecksumFailure.exit_code();
         }
     }
-    
-    // Check dependencies
+
     if let Err(e) = check_dependencies(&config, &metadata.depends) {
         eprintln!("error: missing dependency: {}", e);
         return ExitCode_::DependencyFailure.exit_code();
     }
-    
-    // Build environment
+
     let build_dir = config.build_dir.join(&metadata.name);
     let destdir = build_dir.join("root");
-    
-    // Create build directories
+
     let _ = fs::create_dir_all(&build_dir);
     let _ = fs::create_dir_all(&destdir);
-    
-    // Run prepare if exists
+
     if !run_wbuild_func(&wbuild_path, "prepare", &build_env(&config, &src_dir, &build_dir, &destdir, &metadata)) {
         eprintln!("error: prepare() failed");
         return ExitCode_::BuildFailure.exit_code();
     }
-    
-    // Run build
+
     if !run_wbuild_func(&wbuild_path, "build", &build_env(&config, &src_dir, &build_dir, &destdir, &metadata)) {
         eprintln!("error: build() failed");
         return ExitCode_::BuildFailure.exit_code();
     }
-    
-    // Run install into DESTDIR
+
     if !run_wbuild_func(&wbuild_path, "install", &build_env(&config, &src_dir, &build_dir, &destdir, &metadata)) {
         eprintln!("error: install() failed");
         return ExitCode_::InstallationFailure.exit_code();
     }
-    
-    // Generate file manifest
+
     let manifest_files = generate_file_manifest(&destdir);
-    
-    // Copy files to root (requires privilege)
+
     if !install_files_to_root(&destdir, &manifest_files) {
         eprintln!("error: failed to install files to system");
         return ExitCode_::InstallationFailure.exit_code();
     }
-    
-    // Record installation
+
     let pkg_db_dir = config.db_dir.join(&metadata.name);
     let _ = fs::create_dir_all(&pkg_db_dir);
-    
-    // Save metadata
+
     if let Err(e) = metadata.save_to_dir(&pkg_db_dir) {
         eprintln!("error: failed to save metadata: {}", e);
         return ExitCode_::InstallationFailure.exit_code();
     }
-    
-    // Save file manifest
+
     let mut files_content = String::new();
     for file_path in &manifest_files {
         let relative = file_path.strip_prefix(&destdir).unwrap_or(&file_path);
@@ -359,29 +379,27 @@ fn add_package(config: &Config, url: &str, yes: bool) -> ExitCode {
         files_content.push('\n');
     }
     let _ = fs::write(pkg_db_dir.join("files"), files_content);
-    
+
     println!("Successfully installed {} {}", metadata.name, metadata.version);
     ExitCode_::Success.exit_code()
 }
 
 fn remove_package(config: &Config, package: &str) -> ExitCode {
     let pkg_db_dir = config.db_dir.join(package);
-    
+
     if !pkg_db_dir.exists() {
         eprintln!("error: package not found: {}", package);
         return ExitCode_::PackageNotFound.exit_code();
     }
-    
-    // Load package metadata
-    let _metadata = match PackageMetadata::load_from_dir(&pkg_db_dir) {
+
+    let metadata = match PackageMetadata::load_from_dir(&pkg_db_dir) {
         Some(meta) => meta,
         None => {
             eprintln!("error: corrupted package database for {}", package);
             return ExitCode_::GeneralError.exit_code();
         }
     };
-    
-    // Load file manifest
+
     let files_path = pkg_db_dir.join("files");
     let files_content = match fs::read_to_string(&files_path) {
         Ok(content) => content,
@@ -390,8 +408,7 @@ fn remove_package(config: &Config, package: &str) -> ExitCode {
             return ExitCode_::GeneralError.exit_code();
         }
     };
-    
-    // Remove each file
+
     let mut failed = false;
     for line in files_content.lines() {
         let file_path = Path::new(line);
@@ -402,14 +419,12 @@ fn remove_package(config: &Config, package: &str) -> ExitCode {
             }
         }
     }
-    
-    // Remove package from db directory
+
     if let Err(e) = fs::remove_dir_all(&pkg_db_dir) {
         eprintln!("error: failed to remove package directory: {}", e);
         return ExitCode_::GeneralError.exit_code();
     }
-    
-    // Optionally run wbuild.sh uninstall if it exists
+
     let wbuild_path = config.src_dir.join(package).join("wbuild.sh");
     if wbuild_path.exists() {
         let _ = Command::new("sh")
@@ -422,19 +437,19 @@ fn remove_package(config: &Config, package: &str) -> ExitCode {
             .arg("uninstall")
             .status();
     }
-    
+
     if failed {
         println!("Package removed with warnings: {}", package);
         return ExitCode_::GeneralError.exit_code();
     }
-    
+
     println!("Removed package: {}", package);
     ExitCode_::Success.exit_code()
 }
 
 fn list_packages(config: &Config) -> ExitCode {
     let mut packages = Vec::new();
-    
+
     if let Ok(entries) = fs::read_dir(&config.db_dir) {
         for entry in entries.flatten() {
             if entry.path().is_dir() {
@@ -444,24 +459,24 @@ fn list_packages(config: &Config) -> ExitCode {
             }
         }
     }
-    
+
     packages.sort_by(|a, b| a.0.cmp(&b.0));
-    
+
     for (name, version) in packages {
         println!("{} {}", name, version);
     }
-    
+
     ExitCode_::Success.exit_code()
 }
 
 fn info_package(config: &Config, package: &str) -> ExitCode {
     let pkg_db_dir = config.db_dir.join(package);
-    
+
     if !pkg_db_dir.exists() {
         eprintln!("error: package not found: {}", package);
         return ExitCode_::PackageNotFound.exit_code();
     }
-    
+
     match PackageMetadata::load_from_dir(&pkg_db_dir) {
         Some(metadata) => {
             println!("Name: {}", metadata.name);
@@ -483,13 +498,12 @@ fn info_package(config: &Config, package: &str) -> ExitCode {
 
 fn update_package(config: &Config, package: Option<&str>, yes: bool) -> ExitCode {
     if let Some(pkg) = package {
-        // Update specific package
         let pkg_db_dir = config.db_dir.join(pkg);
         if !pkg_db_dir.exists() {
             eprintln!("error: package not found: {}", pkg);
             return ExitCode_::PackageNotFound.exit_code();
         }
-        
+
         let metadata = match PackageMetadata::load_from_dir(&pkg_db_dir) {
             Some(meta) => meta,
             None => {
@@ -497,13 +511,11 @@ fn update_package(config: &Config, package: Option<&str>, yes: bool) -> ExitCode
                 return ExitCode_::GeneralError.exit_code();
             }
         };
-        
+
         eprintln!("Updating {}...", metadata.name);
-        // Remove old version and reinstall
-        let _ = remove_package(config, pkg);
+        remove_package(config, pkg);
         add_package(config, &metadata.source, yes)
     } else {
-        // Update all packages
         let mut packages = Vec::new();
         if let Ok(entries) = fs::read_dir(&config.db_dir) {
             for entry in entries.flatten() {
@@ -514,7 +526,7 @@ fn update_package(config: &Config, package: Option<&str>, yes: bool) -> ExitCode
                 }
             }
         }
-        
+
         let mut any_failed = false;
         for (name, source) in packages {
             eprintln!("Updating {}...", name);
@@ -528,7 +540,7 @@ fn update_package(config: &Config, package: Option<&str>, yes: bool) -> ExitCode
                 any_failed = true;
             }
         }
-        
+
         if any_failed {
             ExitCode_::GeneralError.exit_code()
         } else {
@@ -538,24 +550,15 @@ fn update_package(config: &Config, package: Option<&str>, yes: bool) -> ExitCode
 }
 
 fn clean_cache(config: &Config) -> ExitCode {
-    // Clean package cache
-    if let Err(e) = fs::remove_dir_all(&config.pkgs_dir) {
-        eprintln!("warning: failed to remove pkgs cache: {}", e);
-    }
+    let _ = fs::remove_dir_all(&config.pkgs_dir);
     let _ = fs::create_dir_all(&config.pkgs_dir);
-    
-    // Clean source cache
-    if let Err(e) = fs::remove_dir_all(&config.src_dir) {
-        eprintln!("warning: failed to remove src cache: {}", e);
-    }
+
+    let _ = fs::remove_dir_all(&config.src_dir);
     let _ = fs::create_dir_all(&config.src_dir);
-    
-    // Clean build/tmp directories
-    if let Err(e) = fs::remove_dir_all(&config.build_dir) {
-        eprintln!("warning: failed to remove build cache: {}", e);
-    }
+
+    let _ = fs::remove_dir_all(&config.build_dir);
     let _ = fs::create_dir_all(&config.build_dir);
-    
+
     println!("Cache cleaned.");
     ExitCode_::Success.exit_code()
 }
@@ -573,22 +576,16 @@ fn fetch_source(config: &Config, url: &str) -> Result<(String, PathBuf), String>
     let dest = if is_git_url(url) {
         config.src_dir.join(&pkg_name)
     } else {
-        // Extract archive into source directory
-        let archive_name = url.split('/').last().unwrap_or("source");
-        let archive_dest = config.pkgs_dir.join(archive_name);
-        
-        // Download archive
-        download_file(url, &archive_dest)
-            .map_err(|e| format!("download failed: {}", e))?;
-        
+        let archive_dest = config.cache_dir.join(url.split('/').last().unwrap_or("archive"));
+        let _ = fs::create_dir_all(archive_dest.parent().unwrap_or(&config.cache_dir));
+        download_file(url, &archive_dest)?;
         let extract_dir = config.src_dir.join(&pkg_name);
-        extract_archive(&archive_dest, &extract_dir)
-            .map_err(|e| format!("extraction failed: {}", e))?;
-        
+        let _ = fs::remove_dir_all(&extract_dir);
+        extract_archive(&archive_dest, &extract_dir)?;
+
         extract_dir
     };
-    
-    // If it's a git repo, clone it
+
     if is_git_url(url) {
         let _ = fs::remove_dir_all(&dest);
         let result = Command::new("git")
@@ -596,23 +593,21 @@ fn fetch_source(config: &Config, url: &str) -> Result<(String, PathBuf), String>
             .arg(url)
             .arg(&dest)
             .status();
-            
+
         match result {
             Ok(status) if status.success() => {},
             _ => return Err("git clone failed".to_string()),
         }
     }
-    
+
     Ok((pkg_name, dest))
 }
 
-fn extract_pkg_name(url: &str) -> String {
-    // Extract package name from URL
+pub(crate) fn extract_pkg_name(url: &str) -> String {
     let name = url.split('/').last().unwrap_or("unknown");
     if name.ends_with(".git") {
         name.trim_end_matches(".git").to_string()
     } else if name.contains('-') && name.contains('.') {
-        // For archives like foo-1.0.tar.gz, extract "foo"
         name.split('-').next().unwrap_or(name).to_string()
     } else {
         name.to_string()
@@ -624,23 +619,23 @@ fn download_file(url: &str, dest: &Path) -> Result<(), String> {
     let response = client.get(url)
         .send()
         .map_err(|e| format!("network error: {}", e))?;
-    
+
     if !response.status().is_success() {
         return Err(format!("HTTP status: {}", response.status()));
     }
-    
+
     let bytes = response.bytes()
         .map_err(|e| format!("failed to read response: {}", e))?;
-    
+
     fs::write(dest, bytes)
         .map_err(|e| format!("failed to write file: {}", e))?;
-    
+
     Ok(())
 }
 
 fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
     let _ = fs::create_dir_all(dest);
-    
+
     let result = if archive.extension().map_or(false, |ext| ext == "zip") {
         Command::new("unzip")
             .arg("-q")
@@ -656,7 +651,7 @@ fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
             .arg(dest)
             .status()
     };
-    
+
     match result {
         Ok(status) if status.success() => Ok(()),
         _ => Err("extraction command failed".to_string()),
@@ -666,19 +661,19 @@ fn extract_archive(archive: &Path, dest: &Path) -> Result<(), String> {
 fn parse_wbuild_metadata(wbuild_path: &Path) -> Result<PackageMetadata, String> {
     let content = fs::read_to_string(wbuild_path)
         .map_err(|e| format!("failed to read wbuild.sh: {}", e))?;
-    
+
     let mut metadata = PackageMetadata::default();
-    
+
     for line in content.lines() {
         let line = line.trim();
         if line.starts_with('#') {
             continue;
         }
-        
+
         if let Some((key, value)) = line.split_once('=') {
             let key = key.trim();
             let value = value.trim().trim_matches('"');
-            
+
             match key {
                 "name" => metadata.name = value.to_string(),
                 "version" => metadata.version = value.to_string(),
@@ -691,40 +686,34 @@ fn parse_wbuild_metadata(wbuild_path: &Path) -> Result<PackageMetadata, String> 
                 _ => {}
             }
         }
-        
-        // Look for sha256sums
+
         if line.starts_with("sha256sums") {
-            // Parse sha256sums entries
-            // Format: "abc123...  filename"
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
                 metadata.sha256sums.insert(parts[1].to_string(), parts[0].to_string());
             }
         }
     }
-    
-    // Set default values if missing
+
     if metadata.name.is_empty() {
         metadata.name = wbuild_path.parent()
-            .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
     }
-    
+
     if metadata.version.is_empty() {
         metadata.version = "unknown".to_string();
     }
-    
-    // Set architecture and libc from system
+
     if metadata.architecture.is_empty() {
         metadata.architecture = get_architecture();
     }
-    
+
     if metadata.libc.is_empty() {
         metadata.libc = get_libc();
     }
-    
+
     Ok(metadata)
 }
 
@@ -734,32 +723,31 @@ fn verify_checksums(src_dir: &Path, sums: &HashMap<String, String>) -> Result<()
         if !file_path.exists() {
             return Err(format!("file not found: {}", filename));
         }
-        
+
         let actual = compute_sha256(&file_path)
             .map_err(|e| format!("failed to compute checksum: {}", e))?;
-            
+
         if actual != *expected {
             return Err(format!("checksum mismatch for {}: expected {}, got {}", filename, expected, actual));
         }
     }
-    
+
     Ok(())
 }
 
 fn compute_sha256(path: &Path) -> Result<String, String> {
-    use std::process::Command;
     let output = Command::new("sha256sum")
         .arg(path)
         .output()
         .map_err(|e| format!("sha256sum command failed: {}", e))?;
-    
+
     if !output.status.success() {
         return Err("sha256sum command failed".to_string());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let hash = stdout.split_whitespace().next().ok_or("empty checksum output")?;
-    
+
     Ok(hash.to_string())
 }
 
@@ -770,7 +758,7 @@ fn check_dependencies(_config: &Config, depends: &[String]) -> Result<(), String
             return Err(dep.clone());
         }
     }
-    
+
     Ok(())
 }
 
@@ -790,14 +778,14 @@ fn build_env(config: &Config, src_dir: &Path, build_dir: &Path, destdir: &Path, 
 
 fn run_wbuild_func(wbuild_path: &Path, func_name: &str, env_vars: &[(&'static str, String)]) -> bool {
     let script = format!("{{ source {}; {} ; }}", wbuild_path.display(), func_name);
-    
+
     let mut cmd = Command::new("sh");
     cmd.arg("-c").arg(&script);
-    
+
     for (key, value) in env_vars {
         cmd.env(key, value);
     }
-    
+
     match cmd.status() {
         Ok(status) => status.success(),
         Err(_) => false,
@@ -827,28 +815,28 @@ fn install_files_to_root(src: &Path, files: &[PathBuf]) -> bool {
     for file_path in files {
         let relative = file_path.strip_prefix(src).unwrap_or(file_path);
         let dest_path = Path::new("/").join(relative);
-        
+
         if let Some(parent) = dest_path.parent() {
             if let Err(e) = fs::create_dir_all(parent) {
                 eprintln!("error: failed to create directory {}: {}", parent.display(), e);
                 return false;
             }
         }
-        
+
         if let Err(e) = fs::copy(file_path, &dest_path) {
             eprintln!("error: failed to copy {} to {}: {}", file_path.display(), dest_path.display(), e);
             return false;
         }
     }
-    
+
     true
 }
 
-fn get_architecture() -> String {
+pub(crate) fn get_architecture() -> String {
     let output = Command::new("uname")
         .arg("-m")
         .output();
-        
+
     match output {
         Ok(o) if o.status.success() => {
             String::from_utf8_lossy(&o.stdout).trim().to_string()
@@ -857,26 +845,25 @@ fn get_architecture() -> String {
     }
 }
 
-fn get_libc() -> String {
-    // Check if we're running on musl or glibc
-    let ldd_path = Path::new("/lib/ld-musl.so.1");
-    if ldd_path.exists() {
+pub(crate) fn get_libc() -> String {
+    let ld_path = Path::new("/lib/ld-musl.so.1");
+    if ld_path.exists() {
         return "musl".to_string();
     }
-    
-    ldd_path.to_str().unwrap_or("glibc").to_string()
+
+    "glibc".to_string()
 }
 
-fn print_warning(url: &str) {
+pub(crate) fn print_warning(url: &str) {
     eprintln!("warning: package contains executable build instructions.");
     eprintln!("source: {}", url);
     eprintln!();
 }
 
-fn get_user_confirmation() -> Option<bool> {
+pub(crate) fn get_user_confirmation() -> Option<bool> {
     print!("Continue? [y/N] ");
     io::stdout().flush().ok();
-    
+
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
         Ok(_) => {

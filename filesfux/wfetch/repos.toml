@@ -1,0 +1,7 @@
+[repo.derive]
+name = "dériveports"
+url = "https://codeberg.org/derivelinux/ports.git"
+
+[repo.aur]
+name = "aur"
+url = "https://aur.archlinux.org"

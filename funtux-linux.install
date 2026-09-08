@@ -8,6 +8,6 @@ pre_install() {
         fstab gettytab group hostname hosts issue ld.so.conf locale.sh \
         motd os-release passwd profile shells sysctl sysusers tmpfiles
     do
-        rm -f "${f}"
+        rm -f "/etc/${f}"
     done
 }

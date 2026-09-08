@@ -4,9 +4,12 @@ DIRS := 'srcfux/bin srcfux/mroot srcfux/libfunobject'
 
 build:
     @for d in {{DIRS}}; do make -C "$d"; done
+    @makepkg -f
 
 clean:
     @for d in {{DIRS}}; do make -C "$d" clean; done
+    @rm -rf pkg src build
+    @rm *.zst
 
 test:
     @make -C srcfux/libfunobject test
